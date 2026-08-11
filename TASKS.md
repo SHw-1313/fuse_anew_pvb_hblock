@@ -128,7 +128,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: complete-file vendor from Anew SHA `926e99818ea18cf9d9b2064ce0319fe691b7a1f1`
   - Tests: `python -m unittest -v tests.test_anew_vendor_parity`
   - Result: Passed; namespaced vendored package imports without the sibling repository.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T101 Copy Anew license.
 
@@ -138,7 +138,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: complete-file copy
   - Tests: source/target license inspection
   - Result: Passed; license retained.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T102 Copy `models/modules/EPT/ept.py`.
 
@@ -148,7 +148,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: complete-file copy with import-only namespace patch
   - Tests: EPT numerical parity test
   - Result: Passed; output matches the source implementation.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T103 Copy `models/modules/EPT/radial_basis.py`.
 
@@ -158,7 +158,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: complete-file copy
   - Tests: vendored EPT parity subprocess
   - Result: Passed; source implementation reused.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T104 Copy `models/modules/GET/tools.py`.
 
@@ -168,7 +168,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: complete-file copy
   - Tests: vendored encoder forward
   - Result: Passed; Anew block/unit edge utility is available locally.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T105 Copy `models/modules/nn.py`.
 
@@ -178,7 +178,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: complete-file copy
   - Tests: BlockEmbedding numerical parity test
   - Result: Passed.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T106 Copy required `utils/nn_utils.py`.
 
@@ -188,7 +188,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: complete-file copy
   - Tests: vendored EPT import and encoder tests
   - Result: Passed; stable normalization/batching dependency is present.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T107 Copy required `utils/gnn_utils.py`.
 
@@ -198,7 +198,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: complete-file copy
   - Tests: Anew pooling formula test
   - Result: Passed; variance-preserving pooling matches reference semantics.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T108 Copy `utils/register.py` or remove registration with a documented minimal patch.
 
@@ -208,7 +208,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: complete-file copy
   - Tests: namespaced imports
   - Result: Passed; registration dependency is isolated under the vendored namespace.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T109 Convert copied imports to package-relative imports.
 
@@ -218,7 +218,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: changed only sibling utility imports to relative imports
   - Tests: source/target subprocess parity without `PYTHONPATH` or `sys.path` injection
   - Result: Passed.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T110 Record every copied source and SHA in `DECISIONS.md`.
 
@@ -228,7 +228,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: source path/SHA audit
   - Tests: source worktree status
   - Result: Passed; D017 records the complete vendor map.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T111 Add import tests for the vendored package.
 
@@ -238,7 +238,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: `python -m unittest -v tests.test_anew_vendor_parity`
   - Tests: import and numerical parity tests
   - Result: Passed; 2 tests.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T112 Add parity tests against the corresponding Anew source implementation.
 
@@ -248,7 +248,7 @@ Gate P0: stop if the copied PVB baseline is not reproducible.
   - Commands: `python -m unittest -v tests.test_anew_vendor_parity`
   - Tests: source-vendored output comparisons
   - Result: Passed; numerical parity confirmed.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 Gate P1: PASSED; vendored EPT, embedding, edge, and pooling dependencies match the source implementation.
 
@@ -262,7 +262,7 @@ Gate P1: PASSED; vendored EPT, embedding, edge, and pooling dependencies match t
   - Commands: graph-crop and block-field call-site audit
   - Tests: all relevant graph crop paths reviewed
   - Result: Passed; protein and complex preprocessors were identified and updated where applicable.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T201 Define explicit block metadata schema.
 
@@ -272,7 +272,7 @@ Gate P1: PASSED; vendored EPT, embedding, edge, and pooling dependencies match t
   - Commands: schema implementation
   - Tests: metadata contract tests
   - Result: Passed; schema is `atom_block_id`, `block_type`, `block_batch`, `block_lengths`.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T202 Add preprocessing support for local block IDs.
 
@@ -282,7 +282,7 @@ Gate P1: PASSED; vendored EPT, embedding, edge, and pooling dependencies match t
   - Commands: annotate records during preprocessing and batch creation
   - Tests: explicit preprocessing annotation test
   - Result: Passed; local IDs are materialized before model forward.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T203 Make graph cropping preserve complete residue blocks.
 
@@ -292,7 +292,7 @@ Gate P1: PASSED; vendored EPT, embedding, edge, and pooling dependencies match t
   - Commands: pass explicit `block_id` to `graph_cut`
   - Tests: partial outer block expansion test
   - Result: Passed; selected blocks are complete.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T204 Offset block IDs correctly in `data/collate.py`.
 
@@ -302,7 +302,7 @@ Gate P1: PASSED; vendored EPT, embedding, edge, and pooling dependencies match t
   - Commands: global offset implementation
   - Tests: two-sample offset test
   - Result: Passed; IDs remain contiguous and sample-isolated.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T205 Produce `atom_block_id`, `block_type`, `block_batch`, `block_lengths`.
 
@@ -312,7 +312,7 @@ Gate P1: PASSED; vendored EPT, embedding, edge, and pooling dependencies match t
   - Commands: explicit metadata update in returned batches
   - Tests: metadata contract test
   - Result: Passed; all four fields are emitted for explicit and legacy records.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T206 Add compatibility conversion for old datasets, on CPU only.
 
@@ -322,7 +322,7 @@ Gate P1: PASSED; vendored EPT, embedding, edge, and pooling dependencies match t
   - Commands: CPU fallback derivation with warning
   - Tests: legacy warning/fallback test
   - Result: Passed; fallback is outside model GPU forward.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T207 Add block ordering, length, batch-isolation, and repeated-residue tests.
 
@@ -332,7 +332,7 @@ Gate P1: PASSED; vendored EPT, embedding, edge, and pooling dependencies match t
   - Commands: `python -m unittest -v tests.test_block_metadata`
   - Tests: ordering, lengths, offsets, repeated residue IDs, and crop behavior
   - Result: Passed; 4 tests.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T208 Reject unsupported ligand/molecular block mappings clearly.
 
@@ -342,7 +342,7 @@ Gate P1: PASSED; vendored EPT, embedding, edge, and pooling dependencies match t
   - Commands: explicit protein vocabulary assertion
   - Tests: non-protein block rejection test
   - Result: Passed; unsupported element/ligand blocks raise a clear protein-only error.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 Gate P2: PASSED; model code consumes explicit integer metadata and does not infer blocks from `b0` equality.
 
@@ -356,7 +356,7 @@ Gate P2: PASSED; model code consumes explicit integer metadata and does not infe
   - Commands: implementation and compileall
   - Tests: `tests.test_anew_block_encoder`
   - Result: Passed; explicit-metadata encoder is available.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T301 Reuse Anew `BlockEmbedding`.
 
@@ -366,7 +366,7 @@ Gate P2: PASSED; model code consumes explicit integer metadata and does not infe
   - Commands: direct vendored import
   - Tests: vendor parity and encoder shape tests
   - Result: Passed; no replacement embedding was reimplemented.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T302 Reuse Anew EPT.
 
@@ -376,7 +376,7 @@ Gate P2: PASSED; model code consumes explicit integer metadata and does not infe
   - Commands: direct vendored import
   - Tests: EPT parity and finite-gradient tests
   - Result: Passed.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T303 Reuse Anew edge utilities.
 
@@ -386,7 +386,7 @@ Gate P2: PASSED; model code consumes explicit integer metadata and does not infe
   - Commands: `knn_edges` and vendored edge embedding path
   - Tests: encoder batch-isolation test
   - Result: Passed.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T304 Adapt the encoding sequence from Anew `model_edge.py`.
 
@@ -396,7 +396,7 @@ Gate P2: PASSED; model code consumes explicit integer metadata and does not infe
   - Commands: BlockEmbedding → EPT → atom/block pooling adaptation
   - Tests: encoder forward and SE(3) tests
   - Result: Passed; source sequence preserved with explicit PVB metadata.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T305 Implement Anew-equivalent `H_atom → H_block` pooling.
 
@@ -406,7 +406,7 @@ Gate P2: PASSED; model code consumes explicit integer metadata and does not infe
   - Commands: `std_conserve_scatter_mean` reuse
   - Tests: exact scatter-sum/sqrt-length comparison
   - Result: Passed.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T306 Implement `X_atom → X_block` pooling.
 
@@ -416,7 +416,7 @@ Gate P2: PASSED; model code consumes explicit integer metadata and does not infe
   - Commands: `scatter_mean` pooling
   - Tests: exact block coordinate mean comparison
   - Result: Passed.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T307 Return a typed/documented output dictionary.
 
@@ -426,7 +426,7 @@ Gate P2: PASSED; model code consumes explicit integer metadata and does not infe
   - Commands: documented `Dict[str, Tensor]` forward
   - Tests: key and shape assertions
   - Result: Passed; all eight required output keys are returned.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T308 Keep PVB coordinate mean equal to `x0`.
 
@@ -436,7 +436,7 @@ Gate P2: PASSED; model code consumes explicit integer metadata and does not infe
   - Commands: fused `_encode_anew_block` keeps `x_mu = x.clone()`
   - Tests: zero-latent-noise source-mean test
   - Result: Passed; Anew coordinate output is not substituted.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T309 Ensure `X_atom`/`X_block` are diagnostic-only in milestone one.
 
@@ -446,7 +446,7 @@ Gate P2: PASSED; model code consumes explicit integer metadata and does not infe
   - Commands: no X output used in PVB bridge or decoder condition
   - Tests: fused source-mean and output-key tests
   - Result: Passed; X outputs are returned only for diagnostics.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T310 Remove unused PVB encoder-edge construction in `anew_block` mode.
 
@@ -456,7 +456,7 @@ Gate P2: PASSED; model code consumes explicit integer metadata and does not infe
   - Commands: branch encoder graph construction on `fusion_mode`
   - Tests: fused one-batch forward/backward
   - Result: Passed; fused paths do not build PVB encoder edges.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T311 Add shape, pooling, batch-isolation, gradient, and SE(3) tests.
 
@@ -466,7 +466,7 @@ Gate P2: PASSED; model code consumes explicit integer metadata and does not infe
   - Commands: `python -m unittest -v tests.test_anew_block_encoder tests.test_fusion`
   - Tests: 8 encoder/fusion tests
   - Result: Passed; shapes, pooling, isolation, gradients, SE(3), and source mean verified.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 Gate P3: PASSED; block outputs and coordinate contract were verified before decoder conditioning.
 
@@ -480,7 +480,7 @@ Gate P3: PASSED; block outputs and coordinate contract were verified before deco
   - Commands: config/model construction audit
   - Tests: off and fused model instantiation
   - Result: Passed; `fusion.mode` supports both paths.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T401 Add block projection `LayerNorm(512) → Linear(512, hidden_dim)`.
 
@@ -490,7 +490,7 @@ Gate P3: PASSED; block outputs and coordinate contract were verified before deco
   - Commands: `nn.Sequential(LayerNorm, Linear)` construction
   - Tests: projection gradient test
   - Result: Passed; default Anew hidden size is 512 and output is PVB hidden size.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T402 Add scalar zero-initialized `block_gate`.
 
@@ -500,7 +500,7 @@ Gate P3: PASSED; block outputs and coordinate contract were verified before deco
   - Commands: `nn.Parameter(torch.zeros(1))`
   - Tests: gate-zero parity test
   - Result: Passed; initial gate is exactly zero.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T403 Broadcast block features with `H_block[atom_block_id]`.
 
@@ -510,7 +510,7 @@ Gate P3: PASSED; block outputs and coordinate contract were verified before deco
   - Commands: project block states then `index_select` by global atom block ID
   - Tests: metadata and fused gradient tests
   - Result: Passed; no coordinate-based membership lookup is used.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T404 Inject conditioning into the PVB decoder input.
 
@@ -520,7 +520,7 @@ Gate P3: PASSED; block outputs and coordinate contract were verified before deco
   - Commands: add gated condition to decoder branch features
   - Tests: gate-zero and fused overfit tests
   - Result: Passed.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T405 Apply identical conditioning to both cross-attention branches.
 
@@ -530,7 +530,7 @@ Gate P3: PASSED; block outputs and coordinate contract were verified before deco
   - Commands: condition added once to each branch before neighbor embedding
   - Tests: decoder parity test and fused forward
   - Result: Passed; source and time branches receive the same tensor.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T406 Preserve `fusion.mode=off` behavior.
 
@@ -540,7 +540,7 @@ Gate P3: PASSED; block outputs and coordinate contract were verified before deco
   - Commands: explicit off branch retains PVB encoder/bridge path
   - Tests: PVB off one-batch overfit and baseline profile
   - Result: Passed; off mode does not instantiate or run Anew fusion.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T407 Add gate-zero decoder parity test.
 
@@ -550,7 +550,7 @@ Gate P3: PASSED; block outputs and coordinate contract were verified before deco
   - Commands: `python -m unittest -v tests.test_fusion`
   - Tests: zero-gated condition versus no condition
   - Result: Passed; decoder outputs match within `1e-6` tolerance.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T408 Verify nonzero projector and gate gradients.
 
@@ -560,7 +560,7 @@ Gate P3: PASSED; block outputs and coordinate contract were verified before deco
   - Commands: fused backward with gate set to `0.2` for gradient check
   - Tests: finite `block_gate` and projector gradients
   - Result: Passed.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T409 Run one-batch overfit for `off` and `anew_block`.
 
@@ -570,7 +570,7 @@ Gate P3: PASSED; block outputs and coordinate contract were verified before deco
   - Commands: `python -m scripts.overfit_one_batch --atoms 16 --samples 2 --steps 5` with both modes
   - Tests: deterministic finite-loss regression
   - Result: Passed; off `29.2191 → 3.1783`, fused `11.6374 → 0.8612`.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
 
@@ -584,7 +584,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: source checkpoint audit; `python train.py --help`
   - Tests: checkpoint fixture suite
   - Result: Passed; target constructs `dyVAE` first and extracts state dictionaries explicitly.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T501 Implement PVB key migration.
 
@@ -594,7 +594,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: scoped `decoder.*`, `vel_ffn.*`, and `drf_ffn.*` selection
   - Tests: serialized PVB module fixture
   - Result: Passed; PVB encoder keys are reported as unused rather than loaded into Anew.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T502 Implement Anew key migration.
 
@@ -604,7 +604,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: explicit mappings for embedding, EPT, edge, projection, and `Wx_log_var`
   - Tests: synthetic standalone-Anew state dictionary
   - Result: Passed; 47/47 compatible Anew keys matched.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T503 Implement full fused resume.
 
@@ -614,7 +614,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: save/load model, optimizer, scheduler, EMA, and progress fields
   - Tests: resume fixture restores model and optimizer state
   - Result: Passed; model and optimizer coverage was 136/136.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T504 Print key coverage and mismatch reports.
 
@@ -624,7 +624,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: `CheckpointReport.summary()` during every role load
   - Tests: checkpoint test output
   - Result: Passed; matched, missing, unexpected, shape-mismatch, and percentage fields are printed.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T505 Add configurable minimum coverage thresholds.
 
@@ -634,7 +634,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: `model.checkpoint_min_coverage` passed to each loader
   - Tests: low-coverage fixture raises `CheckpointCoverageError`
   - Result: Passed; insufficient coverage cannot load silently.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T506 Add checkpoint-loading tests with synthetic and real checkpoints.
 
@@ -644,7 +644,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: `python -m unittest -v tests.test_checkpoints`
   - Tests: PVB module, Anew translated state dict, resume, and low-coverage fixtures
   - Result: Passed; 4 tests.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 ## Phase 6 — Training and performance
 
@@ -656,7 +656,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: Stage A configuration
   - Tests: `python -m unittest -v tests.test_training_stages`
   - Result: Passed; Anew parameters freeze while PVB decoder/heads, projector, and gate remain trainable.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T601 Add separate optimizer parameter groups.
 
@@ -666,7 +666,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: named `pvb`, `anew`, and `projector_gate` groups with separate rates
   - Tests: Stage A group test
   - Result: Passed.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T602 Add selective EPT unfreezing.
 
@@ -676,7 +676,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: Stage B last-N layer selection
   - Tests: three-layer fixture unfreezes only layers 1 and 2
   - Result: Passed.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T603 Log per-module gradient norms and gate value.
 
@@ -686,7 +686,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: post-backward `Fusion/*` logging
   - Tests: finite diagnostics test
   - Result: Passed; PVB/projector gradient norms and scalar gate are reported.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T604 Profile 256/512/1024/2000-atom batches.
 
@@ -696,7 +696,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: `python -m scripts.profile_components --device cuda --atoms {256,512,1024,2000} --steps 2` for both modes
   - Tests: stable post-warmup forward/backward and peak-memory measurements
   - Result: Passed; all eight runs finite and 2000 atoms completed without OOM.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T605 Separate graph, encoder, decoder, and backward timings.
 
@@ -706,7 +706,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: timed wrappers around graph, encoder, decoder, and backward
   - Tests: baseline/fused component profiles
   - Result: Passed; component timings are reported separately.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T606 Add BF16 autocast behind a config flag.
 
@@ -716,7 +716,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: `training.bf16_autocast` flag and guarded `torch.autocast`
   - Tests: CUDA fused BF16 forward/backward probe (`BF16_OK True True`)
   - Result: Passed; finite loss and gradients.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T607 Add attention-aware batch budgeting.
 
@@ -726,7 +726,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: set `data.complexity: "n*n"`
   - Tests: dynamic wrapper budget test
   - Result: Passed; each synthetic batch stays within the pairwise budget.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T608 Compare PVB, legacy fusion if retained, and block fusion.
 
@@ -736,7 +736,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: matched 256/512/1024/2000 profiles for `off` and `anew_block`
   - Tests: finite timing/memory comparison
   - Result: Passed; no legacy fusion path is retained, and the direct baseline/H-block comparison is recorded.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 - [x] T609 Decide whether a separate block-sparse encoder is necessary.
 
@@ -746,7 +746,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: source sparse-default audit; 2000-atom profile
   - Tests: faithful path completed within 80-GB A100 memory
   - Result: Deferred; no separately named `block_sparse` approximation is needed at this milestone. xFormers remains unavailable.
-  - Commit: Pending phase commit
+  - Commit: 62ceeb4
 
 ## Phase 7 — Final verification
 
@@ -758,7 +758,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: `python -m unittest discover -s tests -v`
   - Tests: 22 tests
   - Result: Passed in 15.297 s. Root-level discovery additionally finds unrelated optional PVB packages requiring legacy imports/OpenMM; the target suite is green.
-  - Commit: Pending final commit
+  - Commit: 62ceeb4
 
 - [x] T701 Run protein training smoke test.
 
@@ -768,7 +768,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: `python -m scripts.protein_smoke --device cuda --fusion-mode off`; same command with `--fusion-mode anew_block`
   - Tests: one synthetic protein training step per mode
   - Result: Passed; finite losses `13.7539` and `4.1669`, with finite gradients.
-  - Commit: Pending final commit
+  - Commit: 62ceeb4
 
 - [x] T702 Run protein inference smoke test.
 
@@ -778,7 +778,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: the two T701 smoke commands, each including a short inference rollout
   - Tests: finite generated coordinates for `off` and `anew_block`
   - Result: Passed; both modes returned shape `[16, 3]` with finite values.
-  - Commit: Pending final commit
+  - Commit: 62ceeb4
 
 - [x] T703 Confirm source repositories are unchanged.
 
@@ -788,7 +788,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: `git -C /workspace/PVB status --porcelain=v1`; `git -C /workspace/AnewOmni status --porcelain=v1`
   - Tests: source worktree audit
   - Result: Passed; both source worktrees are clean at the recorded SHAs.
-  - Commit: Pending final commit
+  - Commit: 62ceeb4
 
 - [x] T704 Confirm no runtime dependency on sibling repositories.
 
@@ -798,7 +798,7 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: `rg -n 'sys\\.path|/workspace/(PVB|AnewOmni)|import AnewOmni|from AnewOmni' . --glob '*.py' --glob '!tests/test_anew_vendor_parity.py'`
   - Tests: sibling path/import audit
   - Result: Passed; no PVB/Anew sibling path or import exists in runtime fusion code. Existing optional PVB local `sys.path.append('..')` compatibility lines are documented in `HANDOFF.md`; parity subprocesses are test-only.
-  - Commit: Pending final commit
+  - Commit: 62ceeb4
 
 - [x] T705 Update all four planning/handoff files.
 
@@ -808,14 +808,14 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Commands: final document review and status/evidence updates
   - Tests: live-state consistency review
   - Result: Passed; phase status, validation, limitations, decisions, and next action are recorded.
-  - Commit: Pending final commit
+  - Commit: 62ceeb4
 
-- [ ] T706 Record final changed-file list and benchmark table. **IN_PROGRESS**
+- [x] T706 Record final changed-file list and benchmark table.
 
   Evidence:
   - Source files: target Git history and `scripts/profile_components.py`
   - Target files: `HANDOFF.md`, final target commit
   - Commands: `git status --short`; `git diff --check`; final commit
   - Tests: changed-file and benchmark review
-  - Result: Pending final commit and SHA update.
-  - Commit: Pending final commit
+  - Result: Passed; final changed-file list and multi-scale baseline/H-block benchmark table are recorded in `HANDOFF.md`.
+  - Commit: 62ceeb4 (implementation; this task also includes the final documentation follow-up)

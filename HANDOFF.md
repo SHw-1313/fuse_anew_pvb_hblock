@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Current phase: Phase 7 — final verification
-- Current task: T700 — run full unit tests
-- Status: IN_PROGRESS; Phases 0–6 gates passed
+- Current phase: Phase 7 — final verification complete
+- Current task: T706 — final changed-file and benchmark record
+- Status: DONE; Phases 0–7 gates passed
 - Last updated: 2026-08-11
 - Agent/model: Codex / GPT-5
 - Container: `sihao-dev`, entered with `enter-container`
@@ -26,8 +26,8 @@
 ## Target revision
 
 - Branch: `main`
-- Commit: `2910e6be7fafa796ffe86d133ee6901fc1166bd8` bootstrap; Phase 1–6 changes pending commit
-- Working tree status: target has the vendored Anew path, explicit block metadata, fused encoder/decoder, checkpoint migration, staged training, benchmarks, tests, and live docs; source repositories remain clean
+- Commit: `62ceeb4` implementation; current `HEAD` also contains the documentation-only finalization commit
+- Working tree status: clean; target has the vendored Anew path, explicit block metadata, fused encoder/decoder, checkpoint migration, staged training, benchmarks, tests, and live docs; source repositories remain clean
 
 ## Completed tasks
 
@@ -48,15 +48,16 @@
 - T400–T409 — added zero-gated decoder conditioning and passed parity/gradient/overfit gates.
 - T500–T506 — added explicit PVB/Anew/resume checkpoint migration, coverage reports, and trainer state saving.
 - T600–T609 — added staged freezing, optimizer groups, BF16 option, n*n budgeting, and four-scale profiles.
+- T700–T706 — passed the focused target suite, protein train/inference smoke tests, source/dependency audits, and final changed-file/benchmark review.
 
 ## In-progress task
 
-- Task ID: T700
-- Intended outcome: run the complete target test suite and execute protein training/inference smoke checks.
-- Source files being reused: target tests and PVB protein entrypoints.
-- Target files: test suite and final planning documents.
-- Partial implementation: Phases 0–6 are implemented and their focused tests/profiles pass; final focused suite and synthetic protein smoke checks now pass.
-- Remaining work: mark final tasks complete, create the target commit, and record its SHA.
+- Task ID: None; all planned tasks are complete.
+- Intended outcome: None.
+- Source files being reused: None.
+- Target files: None.
+- Partial implementation: None.
+- Remaining work: None for the first protein-only milestone.
 
 ## Commands already run
 
@@ -164,9 +165,7 @@ Stable post-warmup step from `scripts/profile_components.py` on one A100; graph/
 
 ## Exact next action
 
-1. Mark T700–T706 complete with the final verification evidence.
-2. Remove generated Python caches, review the target diff, and commit the target repository.
-3. Update this file and `TASKS.md` with the final target commit SHA.
+1. Run `git log -1 --oneline` in `/workspace/fuse_anew_pvb_hblock` to verify the final local target revision; expected result is a clean documentation-finalized `main` commit after `62ceeb4`.
 
 ## Resume instructions
 
