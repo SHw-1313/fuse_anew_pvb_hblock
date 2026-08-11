@@ -130,7 +130,7 @@ def compute_rmsd_over_time(traj, init_pos, lagtime=500, nframe=1000):
     alpha_carbons_xyz = traj.xyz[:, alpha_carbons, :]
     init_pos = init_pos[alpha_carbons, :]
     nframe = min(nframe, int(alpha_carbons_xyz.shape[0] / lagtime))
-    selected_indices = np.arange(0, nframe * lagtime, lagtime, dtype=np.compat.long)
+    selected_indices = np.arange(0, nframe * lagtime, lagtime, dtype=np.int64)
     alpha_carbons_xyz = alpha_carbons_xyz[selected_indices]
     # nm => Angstrom
     rmsd_over_time = 10 * np.array([compute_crmsd(xyz, init_pos) for xyz in alpha_carbons_xyz], dtype=float)

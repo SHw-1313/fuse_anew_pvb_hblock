@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Current phase: Phase 1 — reuse Anew implementation
-- Current task: T100 — create `third_party/anewomni`
-- Status: IN_PROGRESS; Phase 0 gate passed
+- Current phase: Phase 7 — final verification
+- Current task: T700 — run full unit tests
+- Status: IN_PROGRESS; Phases 0–6 gates passed
 - Last updated: 2026-08-11
 - Agent/model: Codex / GPT-5
 - Container: `sihao-dev`, entered with `enter-container`
@@ -26,8 +26,8 @@
 ## Target revision
 
 - Branch: `main`
-- Commit: Pending initial bootstrap commit
-- Working tree status: PVB baseline, planning files, and Phase 0 diagnostic scripts ready to commit
+- Commit: `2910e6be7fafa796ffe86d133ee6901fc1166bd8` bootstrap; Phase 1–6 changes pending commit
+- Working tree status: target has the vendored Anew path, explicit block metadata, fused encoder/decoder, checkpoint migration, staged training, benchmarks, tests, and live docs; source repositories remain clean
 
 ## Completed tasks
 
@@ -42,15 +42,21 @@
 - T008 — added the PVB train-step profiling script.
 - T009 — added the deterministic one-batch overfit script.
 - T010 — recorded a full-dimension 64-atom baseline profile.
+- T100–T112 — vendored the minimal Anew implementation and passed source parity.
+- T200–T208 — added explicit block metadata, block-safe cropping, and protein-only rejection.
+- T300–T311 — added the faithful Anew H-block encoder and passed pooling/SE(3)/gradient tests.
+- T400–T409 — added zero-gated decoder conditioning and passed parity/gradient/overfit gates.
+- T500–T506 — added explicit PVB/Anew/resume checkpoint migration, coverage reports, and trainer state saving.
+- T600–T609 — added staged freezing, optimizer groups, BF16 option, n*n budgeting, and four-scale profiles.
 
 ## In-progress task
 
-- Task ID: T100
-- Intended outcome: vendor only the minimal Anew implementation required for faithful BlockEmbedding/EPT/edge/pooling reuse.
-- Source files being reused: AnewOmni `models/IterVAE/model_edge.py`, `models/modules/nn.py`, `models/modules/EPT/`, `models/modules/GET/tools.py`, and required utility files.
-- Target files: `third_party/anewomni/` and parity tests.
-- Partial implementation: PVB baseline is reproducible and committed next; no Anew code has been copied yet.
-- Remaining work: inspect Anew imports and source semantics, copy complete files with headers, namespace imports, and add parity checks. Stop if the actual source architecture differs materially from the plan.
+- Task ID: T700
+- Intended outcome: run the complete target test suite and execute protein training/inference smoke checks.
+- Source files being reused: target tests and PVB protein entrypoints.
+- Target files: test suite and final planning documents.
+- Partial implementation: Phases 0–6 are implemented and their focused tests/profiles pass; final focused suite and synthetic protein smoke checks now pass.
+- Remaining work: mark final tasks complete, create the target commit, and record its SHA.
 
 ## Commands already run
 
@@ -77,6 +83,21 @@ git -C /workspace/AnewOmni status --porcelain=v1
 # Target bootstrap
 rsync -a --exclude='.git/' --exclude='__pycache__/' --exclude='.pytest_cache/' --exclude='.cache/' --exclude='checkpoints/' --exclude='checkpoint/' --exclude='datasets/' --exclude='logs/' --exclude='results/' --exclude='outputs/' --exclude='wandb/' --exclude='ckpt/' --exclude='.venv/' --exclude='venv/' /workspace/PVB/ /workspace/fuse_anew_pvb_hblock/
 git -C /workspace/fuse_anew_pvb_hblock init -b main
+
+# Phase 1–4 validation
+python -m unittest -v tests.test_anew_vendor_parity tests.test_block_metadata tests.test_anew_block_encoder tests.test_fusion
+python -m compileall -q module data tests third_party train.py
+python -m scripts.overfit_one_batch --device cuda --atoms 16 --samples 2 --steps 5 --hidden-dim 32 --ffn-dim 64 --rbf-dim 8 --heads 4 --layers 2 --k-neighbors 8
+python -m scripts.overfit_one_batch --device cuda --atoms 16 --samples 2 --steps 5 --hidden-dim 32 --ffn-dim 64 --rbf-dim 8 --heads 4 --layers 2 --k-neighbors 8 --fusion-mode anew_block
+python -m unittest -v tests.test_checkpoints tests.test_training_stages
+python -m scripts.profile_components --device cuda --atoms 256 --samples 1 --steps 2
+python -m scripts.profile_components --device cuda --atoms 256 --samples 1 --steps 2 --fusion-mode anew_block
+python -m unittest discover -s tests -v
+python -m compileall -q .
+python -m scripts.protein_smoke --device cuda --fusion-mode off
+python -m scripts.protein_smoke --device cuda --fusion-mode anew_block
+python train.py --help
+python infer_prot.py --help
 ```
 
 ## Validation results
@@ -84,21 +105,34 @@ git -C /workspace/fuse_anew_pvb_hblock init -b main
 | Test or benchmark | Command | Result | Notes |
 | --- | --- | --- | --- |
 | PVB baseline | `python -m compileall -q .`; import/CLI smoke | Passed | Unmodified copied PVB tree |
-| Vendor parity | Pending | Pending | |
-| Block metadata | Pending | Pending | |
-| Gate-zero parity | Pending | Pending | |
-| One-batch overfit | Pending | Pending | |
-| SE(3) | Pending | Pending | |
-| Training smoke | Pending | Pending | |
-| Inference smoke | Pending | Pending | |
+| Vendor parity | `python -m unittest -v tests.test_anew_vendor_parity` | Passed | 2 source parity tests |
+| Block metadata | `python -m unittest -v tests.test_block_metadata` | Passed | 4 metadata/cropping tests |
+| Gate-zero parity | `python -m unittest -v tests.test_fusion` | Passed | decoder parity within `1e-6` |
+| One-batch overfit | `python -m scripts.overfit_one_batch ...` | Passed | off `29.2191 → 3.1783`; fused `11.6374 → 0.8612` |
+| SE(3) | `python -m unittest -v tests.test_anew_block_encoder` | Passed | atom state/coordinate equivariance |
+| Checkpoint migration | `python -m unittest -v tests.test_checkpoints` | Passed | PVB/Anew/resume/coverage fixtures |
+| Staged training | `python -m unittest -v tests.test_training_stages` | Passed | Stage A/B, groups, diagnostics, n*n budget |
+| BF16 smoke | CUDA autocast forward/backward probe | Passed | finite fused loss and gradients |
+| Training smoke | `python -m scripts.protein_smoke --device cuda --fusion-mode off`; `... --fusion-mode anew_block` | Passed | Synthetic protein train step; losses `13.7539` and `4.1669`, finite gradients |
+| Inference smoke | Same protein smoke commands | Passed | Both modes returned finite `[16, 3]` generated coordinates |
+| Focused target suite | `python -m unittest discover -s tests -v` | Passed | 22 tests in 15.297 s |
+| Compile/import/CLI | `python -m compileall -q .`; `python train.py --help`; `python infer_prot.py --help` | Passed | Target compiles and both entrypoints import |
 
 ## Performance results
 
-| Mode | Atoms | Forward | Backward | Step | Peak memory |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| PVB baseline | 64 | 0.02282 s | 0.02611 s | 0.04893 s | 697,924,608 bytes |
-| Legacy fusion | Pending | Pending | Pending | Pending | Pending |
-| Anew H-block | Pending | Pending | Pending | Pending | Pending |
+Stable post-warmup step from `scripts/profile_components.py` on one A100; graph/encoder/decoder values are forward components.
+
+| Mode | Atoms | Graph | Encoder | Decoder | Forward | Backward | Step | Peak memory |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| PVB baseline | 64 | — | — | — | 0.02282 s | 0.02611 s | 0.04893 s | 697,924,608 B |
+| PVB baseline | 256 | 0.03172 s | 0.00497 s | 0.01953 s | 0.08040 s | 0.06572 s | 0.14612 s | 2,361,583,616 B |
+| PVB baseline | 512 | 0.02972 s | 0.02405 s | 0.04456 s | 0.10814 s | 0.08315 s | 0.19129 s | 4,593,067,008 B |
+| PVB baseline | 1024 | 0.02801 s | 0.01021 s | 0.05976 s | 0.12035 s | 0.12455 s | 0.24490 s | 9,034,408,960 B |
+| PVB baseline | 2000 | 0.00789 s | 0.01513 s | 0.04912 s | 0.07482 s | 0.09180 s | 0.16661 s | 17,511,942,656 B |
+| Anew H-block | 256 | 0.03078 s | 0.10455 s | 0.04235 s | 0.18486 s | 0.07258 s | 0.25744 s | 2,610,635,776 B |
+| Anew H-block | 512 | 0.00359 s | 0.03939 s | 0.01917 s | 0.06556 s | 0.07295 s | 0.13851 s | 4,715,552,256 B |
+| Anew H-block | 1024 | 0.00272 s | 0.02794 s | 0.02646 s | 0.05959 s | 0.08203 s | 0.14162 s | 8,943,741,440 B |
+| Anew H-block | 2000 | 0.00326 s | 0.05010 s | 0.04776 s | 0.10420 s | 0.15587 s | 0.26007 s | 17,345,196,544 B |
 
 ## Files changed
 
@@ -107,14 +141,22 @@ git -C /workspace/fuse_anew_pvb_hblock init -b main
 * `HANDOFF.md`
 * `DECISIONS.md`
 * PVB baseline files copied into the target from the clean source revision
+* `third_party/anewomni/`
+* `data/block_metadata.py`
+* `module/anew_block_encoder.py`
+* `utils/checkpoint.py`
+* `utils/fusion_training.py`
+* tests and profiling scripts
 
 ## Decisions added or changed
 
-* D001–D015 added from the requested architecture and stop-gate specification.
+* D001–D021; D017 records the vendored source map, D018 the verified vocabulary mapping, D019 target-local NumPy compatibility, D020 shared decoder gating, and D021 n*n batching/performance decision.
 
 ## Known problems
 
 * xFormers is not installed in `torch-ito`; it is optional and not required for the faithful baseline.
+* Root-level `python -m unittest discover -v` also discovers two unrelated optional PVB packages: `ept.models` expects its legacy `utils.register` import layout and `simulation` requires `openmm`. The authoritative target suite is `python -m unittest discover -s tests -v`, which passes all 22 fused-repository tests.
+* The copied optional PVB converters/simulation retain their original local `sys.path.append('..')` compatibility lines; no target runtime code imports `/workspace/PVB` or `/workspace/AnewOmni`, and Anew parity tests invoke the source only in isolated subprocesses.
 
 ## Blockers
 
@@ -122,9 +164,9 @@ git -C /workspace/fuse_anew_pvb_hblock init -b main
 
 ## Exact next action
 
-1. Inspect the target’s test files, import paths, README, and training entrypoint to identify the minimal unchanged PVB smoke suite.
-2. Run that suite in `/workspace/fuse_anew_pvb_hblock` with `torch-ito` active.
-3. If it fails, classify the failure as a reproducibility blocker and stop before Anew integration; if it passes, record evidence and commit the bootstrap baseline.
+1. Mark T700–T706 complete with the final verification evidence.
+2. Remove generated Python caches, review the target diff, and commit the target repository.
+3. Update this file and `TASKS.md` with the final target commit SHA.
 
 ## Resume instructions
 

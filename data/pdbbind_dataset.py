@@ -60,9 +60,9 @@ def preprocess_pdbbind(split_path, _type="train"):
         xp, bp = protein_pos[ap_index], protein_pos[bp_index]
         Np, Nl = len(Zp), len(Zl)
 
-        atype = np.concatenate([Zp, Zl], dtype=np.compat.long)
-        btype = np.concatenate([Bp, Bl], dtype=np.compat.long)
-        edge_mask = np.array([0] * Np + [1] * Nl, dtype=np.compat.long)   # 0: pocket, 1: ligand
+        atype = np.concatenate([Zp, Zl], dtype=np.int64)
+        btype = np.concatenate([Bp, Bl], dtype=np.int64)
+        edge_mask = np.array([0] * Np + [1] * Nl, dtype=np.int64)   # 0: pocket, 1: ligand
 
         # merge bond index
         ligand_bond_index += Np     # start from Np
@@ -70,11 +70,14 @@ def preprocess_pdbbind(split_path, _type="train"):
 
         x0 = np.concatenate([xp, xl])
         b0 = np.concatenate([bp, bl])
+        block_id = np.concatenate([bp_index, bl_index + int(bp_index.max()) + 1])
         assert len(x0) == len(b0) == len(atype) == len(btype), "number of atoms mismatch"
 
         xc = xl.mean(axis=0)
 
-        max_indices, mask = graph_cut(x0, xc=xc, radius_min=20.0, radius_max=40.0)
+        max_indices, mask = graph_cut(
+            x0, xc=xc, radius_min=20.0, radius_max=40.0, block_id=block_id
+        )
         max_indices_list = list(max_indices)
         # re-index bond index
         index_mapping = {x: max_indices_list.index(x) for x in max_indices}
@@ -86,7 +89,7 @@ def preprocess_pdbbind(split_path, _type="train"):
             if begin == -1 or end == -1:
                 continue
             bond_index_slice.append([begin, end])
-        bond_index_slice = np.array(bond_index_slice, dtype=np.compat.long).T
+        bond_index_slice = np.array(bond_index_slice, dtype=np.int64).T
 
         x0 = x0 - xc
         b0 = b0 - xc

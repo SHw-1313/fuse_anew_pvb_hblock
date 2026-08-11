@@ -172,14 +172,14 @@ def docking_eval(gen_protein_path, gen_ligand_path, ref_protein_path, ref_ligand
     #         pocket_residues.append(residue)
     # align to holo structure by pocket backbone atoms
     pocket_residues = [ref_protein.topology.residue(r) for r in pocket_idx]
-    pocket_bb_idx = np.concatenate([[a.index for a in res.atoms if (a.name == 'CA' or a.name == 'C' or a.name == 'N')] for res in pocket_residues], dtype=np.compat.long)
+    pocket_bb_idx = np.concatenate([[a.index for a in res.atoms if (a.name == 'CA' or a.name == 'C' or a.name == 'N')] for res in pocket_residues], dtype=np.int64)
     gen_bb_pos, ref_bb_pos = gen_protein_pos[pocket_bb_idx], ref_protein_pos[pocket_bb_idx]
     # kabsch alignemnt
     _, R, t = kabsch_numpy(gen_bb_pos, ref_bb_pos)
     gen_protein_pos = gen_protein_pos @ R + t
     gen_ligand_pos = gen_ligand_pos @ R + t
     ligand_rmsd = compute_crmsd(gen_ligand_pos, ref_ligand_pos, aligned=True)
-    pocket_idx = np.concatenate([[a.index for a in res.atoms] for res in pocket_residues], dtype=np.compat.long)
+    pocket_idx = np.concatenate([[a.index for a in res.atoms] for res in pocket_residues], dtype=np.int64)
     pocket_rmsd = compute_crmsd(gen_protein_pos[pocket_idx], ref_protein_pos[pocket_idx], aligned=True)
     
     # metrics = Metrics(ref_protein_path, ref_ligand_path, gen_ligand_path).evaluate()

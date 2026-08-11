@@ -40,6 +40,61 @@ def namespace_to_dict(ns):
         return ns
 
 
+def build_dyvae_from_config(args):
+    """Construct the fused model, then load explicitly scoped checkpoints."""
+
+    from module import dyVAE
+    from utils.checkpoint import load_resume_checkpoint, load_role_checkpoint
+
+    fusion = getattr(args.model, "fusion", None)
+    fusion_mode = getattr(fusion, "mode", "off")
+    anew_options = getattr(fusion, "anew", None)
+    anew_encoder_config = namespace_to_dict(anew_options) if anew_options is not None else None
+    model = dyVAE(
+        args.model.hidden_dim, args.model.ffn_dim, args.model.rbf_dim,
+        args.model.heads, args.model.layers,
+        cutoff_lower=args.model.cutoff_lower,
+        cutoff_upper=args.model.cutoff_upper,
+        cutoff_H=args.model.cutoff_H,
+        k_neighbors=args.model.k_neighbors,
+        coord_prior_var=args.model.coord_prior_var,
+        sigma=args.model.sigma,
+        additional_noise_scale=args.model.additional_noise_scale,
+        kl_weight=args.model.kl_weight,
+        re_weight=args.model.re_weight,
+        using_ode=args.model.using_ode,
+        backbone=args.model.backbone,
+        fusion_mode=fusion_mode,
+        anew_encoder_config=anew_encoder_config,
+    )
+
+    pvb_checkpoint = getattr(args.model, "pvb_checkpoint", None)
+    anew_checkpoint = getattr(args.model, "anew_checkpoint", None)
+    resume_checkpoint = getattr(args.model, "resume_checkpoint", None)
+    legacy_checkpoint = getattr(args.model, "ckpt", None)
+    if legacy_checkpoint:
+        raise ValueError(
+            "model.ckpt is deprecated for fused training; use "
+            "model.pvb_checkpoint, model.anew_checkpoint, or "
+            "model.resume_checkpoint"
+        )
+    min_coverage = float(getattr(args.model, "checkpoint_min_coverage", 0.95))
+    model._resume_metadata = None
+    if resume_checkpoint:
+        _, metadata = load_resume_checkpoint(
+            model, resume_checkpoint, min_coverage=min_coverage
+        )
+        model._resume_metadata = metadata
+    else:
+        if pvb_checkpoint:
+            load_role_checkpoint(model, pvb_checkpoint, "pvb", min_coverage=min_coverage)
+        if anew_checkpoint:
+            if fusion_mode != "anew_block":
+                raise ValueError("model.anew_checkpoint requires fusion.mode=anew_block")
+            load_role_checkpoint(model, anew_checkpoint, "anew", min_coverage=min_coverage)
+    return model
+
+
 def main(args):
     ########### load your train / valid set ###########
     if len(args.gpus) > 1:
@@ -84,12 +139,19 @@ def main(args):
                               collate_fn=collate_fn)
 
     ########## define your model/trainer/trainconfig #########
+    fusion_config = getattr(args.model, "fusion", None)
     config = TrainConfig(args.training.save_dir, args.training.lr, args.training.max_epoch,
                          warmup=args.training.warmup,
                          patience=args.training.patience,
                          grad_clip=args.training.grad_clip,
                          save_topk=args.training.save_topk,
                          loss_type=args.training.loss_type,
+                         bf16_autocast=getattr(args.training, "bf16_autocast", False),
+                         fusion_stage=getattr(fusion_config, "stage", "standard"),
+                         unfreeze_ept_layers=getattr(fusion_config, "unfreeze_ept_layers", 2),
+                         pvb_lr=getattr(fusion_config, "pvb_lr", args.training.lr),
+                         anew_lr=getattr(fusion_config, "anew_lr", args.training.lr),
+                         projector_lr=getattr(fusion_config, "projector_lr", args.training.lr),
                          **namespace_to_dict(args.training.wrapper))
 
     if args.model.model_type.upper() == 'PRETRAIN':
@@ -100,22 +162,7 @@ def main(args):
                 config=args
             )
         from trainer import DyVAETrainer as Trainer
-        from module import dyVAE
-        if not args.model.ckpt:
-            model = dyVAE(args.model.hidden_dim, args.model.ffn_dim, args.model.rbf_dim, args.model.heads, args.model.layers,
-                          cutoff_lower=args.model.cutoff_lower,
-                          cutoff_upper=args.model.cutoff_upper,
-                          cutoff_H=args.model.cutoff_H,
-                          k_neighbors=args.model.k_neighbors,
-                          coord_prior_var=args.model.coord_prior_var,
-                          sigma=args.model.sigma,
-                          additional_noise_scale=args.model.additional_noise_scale,
-                          kl_weight=args.model.kl_weight,
-                          re_weight=args.model.re_weight,
-                          using_ode=args.model.using_ode,
-                          backbone=args.model.backbone)
-        else:
-            model = torch.load(args.model.ckpt, map_location='cpu')
+        model = build_dyvae_from_config(args)
     elif args.model.model_type.upper() == 'MD':
         if args.local_rank == 0 or args.local_rank == -1:
             wandb.init(
@@ -124,22 +171,7 @@ def main(args):
                 config=args
             )
         from trainer import DynamicTrainer as Trainer
-        from module import dyVAE
-        if not args.model.ckpt:
-            model = dyVAE(args.model.hidden_dim, args.model.ffn_dim, args.model.rbf_dim, args.model.heads, args.model.layers,
-                          cutoff_lower=args.model.cutoff_lower,
-                          cutoff_upper=args.model.cutoff_upper,
-                          cutoff_H=args.model.cutoff_H,
-                          k_neighbors=args.model.k_neighbors,
-                          coord_prior_var=args.model.coord_prior_var,
-                          sigma=args.model.sigma,
-                          additional_noise_scale=args.model.additional_noise_scale,
-                          kl_weight=args.model.kl_weight,
-                          re_weight=args.model.re_weight,
-                          using_ode=args.model.using_ode,
-                          backbone=args.model.backbone)
-        else:
-            model = torch.load(args.model.ckpt, map_location='cpu')
+        model = build_dyvae_from_config(args)
     elif args.model.model_type.upper() == 'ADJ':
         if args.local_rank == 0 or args.local_rank == -1:
             wandb.init(
@@ -174,6 +206,8 @@ def main(args):
     torch.set_default_dtype(torch.float32)
 
     trainer = Trainer(model, train_loader, valid_loader, config)
+    if getattr(model, "_resume_metadata", None) is not None:
+        trainer.restore_resume_state(model._resume_metadata)
     trainer.train(args.gpus, args.local_rank)
 
 

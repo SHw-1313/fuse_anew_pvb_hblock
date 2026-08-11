@@ -1,8 +1,8 @@
 data:
   dataset: uni                # default dataset type, DO NOT CHANGE
   same_origin: false          # whether the selected data in a mini-batch are of the same molecule, DO NOT CHANGE
-  complexity: "n"             # pre-defined computational complexity w.r.t. the number of atoms
-  ubound_per_batch: 2_000     # upper bound of the complexity of each mini-batch, depends on CUDA memory
+  complexity: "n*n"           # attention-aware complexity for atom-pair scaling
+  ubound_per_batch: 2_000     # upper bound of the n*n batch budget, depends on CUDA memory
   max_batches: 60_000         # upper bound of mini-batches in an epoch for each dataset
   path:
     ### pretrain
@@ -19,6 +19,7 @@ training:
   warmup: 1_000                         # warm-up steps
   max_epoch: 200                        # maximum training epochs
   grad_clip: 1.0                        # gradient clip, default: 1.0
+  bf16_autocast: false                  # optional BF16 autocast for forward/validation
   batch_size: 4                         # batch size, NOTE THAT you should only specify batch_size=number of GPUs, since mini-batches will be wrapped to one single batch before sending to DataLoader
   patience: 8                           # patience for early stop, based on validation loss
   save_topk: 10                         # number of saved checkpoints
@@ -31,7 +32,11 @@ training:
 
 model:
   ref: null                             # specify the reference model checkpoint, ONLY FOR adjoint matching
-  ckpt: null                            # specify the checkpoint to be loaded, default: null (training from scratch)
+  ckpt: null                            # deprecated; use the explicit checkpoint roles below
+  pvb_checkpoint: null                  # compatible PVB decoder/head state dictionary
+  anew_checkpoint: null                 # compatible Anew embedding/EPT state dictionary
+  resume_checkpoint: null                # complete fused model/training state
+  checkpoint_min_coverage: 0.95          # fail loudly below this compatible-key coverage
   model_type: md                        # specify the training stages: pretraining ('pretrain'), fine-tuning on paired trajectory data ('md'), and adjoint matching ('adj')
   hidden_dim: 256                       # hidden dimensions, default: 256
   ffn_dim: 512                          # FFN dimensions, default: 512
@@ -51,3 +56,10 @@ model:
   rl_sde_step: 10                       # discrete SDE step for adjoint matching, default: 10
   using_ode: false                      # whether to use ODE to model the bridge, default: false
   backbone: torchmdnet                  # backbone module type, default: torchmdnet, DO NOT CHANGE
+  fusion:
+    mode: off                           # off or anew_block
+    stage: standard                     # standard, A, B, or C when fusion is enabled
+    pvb_lr: 0.0001
+    anew_lr: 0.00001
+    projector_lr: 0.0001
+    unfreeze_ept_layers: 2

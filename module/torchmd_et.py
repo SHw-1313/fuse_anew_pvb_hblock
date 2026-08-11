@@ -321,7 +321,8 @@ class TorchMD_VQ_ET(nn.Module):
         edge_vec_0: Optional[Tensor] = None,
         edge_weight_t: Optional[Tensor] = None,
         edge_vec_t: Optional[Tensor] = None,
-        bond_type: Optional[Tensor] = None
+        bond_type: Optional[Tensor] = None,
+        block_condition: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         assert (
             t is None or t.shape[1] == self.extra_channels
@@ -343,12 +344,26 @@ class TorchMD_VQ_ET(nn.Module):
 
         if self.cross_attn:
             x0 = torch.cat([x, torch.zeros_like(t)], dim=1) if self.extra_channels > 0 else x
+            if block_condition is not None:
+                if block_condition.shape != x0.shape:
+                    raise ValueError(
+                        "block_condition must have shape "
+                        f"{tuple(x0.shape)}, got {tuple(block_condition.shape)}"
+                    )
+                x0 = x0 + block_condition
             edge_attr_0 = self.distance_expansion(edge_weight_0)
             edge_attr_0 = torch.cat([edge_attr_0, bond_attr], dim=1)
             if self.neighbor_embedding is not None:
                 x0 = self.neighbor_embedding(z, x0, edge_index, edge_weight_0, edge_attr_0)
         
         xt = torch.cat([x, t], dim=1) if self.extra_channels > 0 else x
+        if block_condition is not None:
+            if block_condition.shape != xt.shape:
+                raise ValueError(
+                    "block_condition must have shape "
+                    f"{tuple(xt.shape)}, got {tuple(block_condition.shape)}"
+                )
+            xt = xt + block_condition
         # edge_index: (2, E), edge_weight: (E,), edge_vec: (E, 3)
         # edge_index, edge_weight, edge_vec = self.distance(pos, batch, box)
         # This assert must be here to convince TorchScript that edge_vec is not None

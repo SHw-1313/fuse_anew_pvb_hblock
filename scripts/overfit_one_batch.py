@@ -30,6 +30,16 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cutoff-upper", type=float, default=10.0)
     parser.add_argument("--additional-noise-scale", type=float, default=0.0)
     parser.add_argument("--using-ode", action="store_true")
+    parser.add_argument("--fusion-mode", choices=("off", "anew_block"), default="off")
+    parser.add_argument("--anew-hidden-dim", type=int, default=32)
+    parser.add_argument("--anew-ffn-dim", type=int, default=32)
+    parser.add_argument("--anew-edge-size", type=int, default=16)
+    parser.add_argument("--anew-rbf-dim", type=int, default=16)
+    parser.add_argument("--anew-cutoff", type=float, default=10.0)
+    parser.add_argument("--anew-layers", type=int, default=2)
+    parser.add_argument("--anew-heads", type=int, default=4)
+    parser.add_argument("--anew-k-neighbors", type=int, default=4)
+    parser.add_argument("--anew-sparse-k", type=int, default=2)
     return parser
 
 

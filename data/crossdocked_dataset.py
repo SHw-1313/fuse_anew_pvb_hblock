@@ -40,14 +40,14 @@ def preprocess_crossdocked(split_path, _type="train"):
 
         Zp, Bp, ap_index, bp_index, p_bond_index = get_block_from_top(pocket.topology)
         Zl, Bl, al_index, bl_index, l_bond_index = get_block_from_mol(ligand)
-        atype = np.concatenate([Zp, Zl], dtype=np.compat.long)
-        btype = np.concatenate([Bp, Bl], dtype=np.compat.long)
+        atype = np.concatenate([Zp, Zl], dtype=np.int64)
+        btype = np.concatenate([Bp, Bl], dtype=np.int64)
         Np, Nl = len(Zp), len(Zl)
         # merge bond index
         l_bond_index += Np
         bond_index = np.hstack([p_bond_index, l_bond_index])
 
-        edge_mask = np.array([0] * Np + [1] * Nl, dtype=np.compat.long)   # 0: pocket, 1: ligand
+        edge_mask = np.array([0] * Np + [1] * Nl, dtype=np.int64)   # 0: pocket, 1: ligand
 
         pocket_pos = 10.0 * pocket.xyz[0]
         xp, bp = pocket_pos[ap_index], pocket_pos[bp_index]

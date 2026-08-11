@@ -3,6 +3,7 @@ import mdtraj as md
 import torch
 from rdkit import Chem
 from utils.bio_utils import *
+from data.block_metadata import annotate_block_metadata
 
 
 def make_batch(state0file, bs, _format="pdb"):
@@ -63,7 +64,7 @@ def make_batch(state0file, bs, _format="pdb"):
         "bond_index": bond_index_batch
     }
 
-    return batch, (a_index,)
+    return annotate_block_metadata(batch), (a_index,)
 
 
 def make_batch_complex_pl(protein_state0_path, ligand_state0_path, bs):
@@ -85,8 +86,8 @@ def make_batch_complex_pl(protein_state0_path, ligand_state0_path, bs):
     l_bond_index += Np
     bond_index = np.hstack([p_bond_index, l_bond_index])
 
-    atype = torch.from_numpy(np.concatenate([ap_type, al_type], dtype=np.compat.long)).long()
-    btype = torch.from_numpy(np.concatenate([bp_type, bl_type], dtype=np.compat.long)).long()
+    atype = torch.from_numpy(np.concatenate([ap_type, al_type], dtype=np.int64)).long()
+    btype = torch.from_numpy(np.concatenate([bp_type, bl_type], dtype=np.int64)).long()
     x0 = torch.from_numpy(np.concatenate([ap_pos, al_pos], dtype=float)).float()
     b0 = torch.from_numpy(np.concatenate([bp_pos, bl_pos], dtype=float)).float()
     bond_index = torch.from_numpy(bond_index).long()
@@ -121,7 +122,7 @@ def make_batch_complex_pl(protein_state0_path, ligand_state0_path, bs):
         "bond_index": bond_index_batch
     }
 
-    return batch, (ap_index, al_index)
+    return annotate_block_metadata(batch), (ap_index, al_index)
 
 
 def make_batch_complex_mix(state0_path, bs):
@@ -165,4 +166,4 @@ def make_batch_complex_mix(state0_path, bs):
         "bond_index": bond_index_batch
     }
 
-    return batch, (a_index,)
+    return annotate_block_metadata(batch), (a_index,)

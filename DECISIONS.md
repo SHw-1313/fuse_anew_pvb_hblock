@@ -137,3 +137,63 @@ The target baseline was copied from PVB commit
 `c08e5e3cd49d45c6d748387e78224843bd356f50`. AnewOmni source reuse will be
 based on commit `926e99818ea18cf9d9b2064ce0319fe691b7a1f1`. Both source
 worktrees were clean before work began.
+
+## D017 — Vendored Anew source map
+
+Status: Accepted
+
+All entries below come from AnewOmni commit
+`926e99818ea18cf9d9b2064ce0319fe691b7a1f1` and are copied under the target
+namespace:
+
+| Source path | Target path | Modification |
+| --- | --- | --- |
+| `LICENSE` | `third_party/anewomni/LICENSE` | None |
+| `models/modules/EPT/ept.py` | `third_party/anewomni/models/modules/EPT/ept.py` | Relative imports only |
+| `models/modules/EPT/radial_basis.py` | `third_party/anewomni/models/modules/EPT/radial_basis.py` | None |
+| `models/modules/GET/tools.py` | `third_party/anewomni/models/modules/GET/tools.py` | None |
+| `models/modules/nn.py` | `third_party/anewomni/models/modules/nn.py` | None |
+| `utils/nn_utils.py` | `third_party/anewomni/utils/nn_utils.py` | None |
+| `utils/gnn_utils.py` | `third_party/anewomni/utils/gnn_utils.py` | None |
+| `utils/register.py` | `third_party/anewomni/utils/register.py` | None |
+
+The target uses package-relative imports and does not inject a sibling path at
+runtime.
+
+## D018 — Verified protein vocabulary mapping
+
+Status: Accepted
+
+PVB's 118-entry periodic-table order matches Anew's periodic table. PVB atom
+IDs therefore map to Anew atom IDs with a `+1` dummy-token offset. PVB's
+20-residue order matches Anew's amino-acid order, so residue block IDs map from
+`PVB block_id - 118 + 1`. Any other PVB block ID is rejected in the protein-only
+milestone; no arbitrary ligand offset is allowed.
+
+## D019 — NumPy compatibility is target-local
+
+Status: Accepted
+
+The target replaces deprecated `np.compat.long` references in copied PVB
+runtime files with `np.int64`, because the pinned `torch-ito` NumPy runtime has
+no `np.compat`. This compatibility edit is confined to the target; source
+repositories remain untouched.
+
+## D020 — Decoder condition is shared across both branches
+
+Status: Accepted
+
+`H_block` is projected, indexed by `atom_block_id`, multiplied by
+`tanh(block_gate)`, and added to both PVB TorchMD cross-attention branch inputs
+(`x0` and `xt`) before neighbor embedding. At gate zero, the added tensor is
+exactly zero and the decoder path matches the unconditioned path.
+
+## D021 — Use an attention-aware dynamic batch budget
+
+Status: Accepted
+
+The training config uses the existing `DynamicBatchWrapper` with
+`complexity: "n*n"`, matching the dominant pairwise attention cost. The
+faithful Anew EPT path remains the default encoder; no separate `block_sparse`
+approximation is introduced because the 2000-atom benchmark completed within
+the available 80-GB A100 memory and xFormers is not installed.

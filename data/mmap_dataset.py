@@ -11,6 +11,11 @@ from copy import deepcopy
 
 import torch
 
+try:
+    from .block_metadata import annotate_block_metadata
+except ImportError:  # compatibility with direct preprocessing scripts
+    from block_metadata import annotate_block_metadata
+
 
 def compress(x):
     serialized_x = json.dumps(x).encode()
@@ -48,6 +53,8 @@ def create_mmap(iterator, out_dir, total_len=None, commit_batch=10000):
 
     i, offset = 0, 0
     for _id, x, properties in tqdm(iterator, total=total_len):
+        if isinstance(x, dict) and {"btype", "b0"}.issubset(x):
+            x = annotate_block_metadata(x)
         compressed_x = compress(x)
         bin_length = data_file.write(compressed_x)
         properties = '\t'.join(_prop_to_str(properties))

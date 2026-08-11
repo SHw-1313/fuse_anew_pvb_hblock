@@ -49,9 +49,21 @@ def build_synthetic_batch(
     # PVB uses zero-based periodic-table IDs. C/N/O are valid protein atom IDs.
     atom_choices = torch.tensor([5, 6, 7, 8], dtype=torch.long)
     atype = atom_choices[torch.randint(len(atom_choices), (atoms,), generator=generator)]
-    residue_start = len(ATOM_TYPE)
-    btype = residue_start + torch.arange(atoms, dtype=torch.long) % (NUM_BLOCK_TYPE - residue_start)
     abid = torch.arange(samples, dtype=torch.long).repeat_interleave(atoms_per_sample)
+    if atoms_per_sample % 2:
+        raise ValueError("--atoms per sample must be divisible by 2 for synthetic complete blocks")
+    blocks_per_sample = atoms_per_sample // 2
+    local_block_id = torch.arange(atoms_per_sample, dtype=torch.long) // 2
+    atom_block_id = local_block_id.repeat(samples) + (
+        torch.arange(samples, dtype=torch.long).repeat_interleave(atoms_per_sample) * blocks_per_sample
+    )
+    residue_start = len(ATOM_TYPE)
+    block_type = residue_start + torch.arange(samples * blocks_per_sample, dtype=torch.long) % 20
+    btype = block_type[atom_block_id]
+    block_batch = torch.arange(samples, dtype=torch.long).repeat_interleave(blocks_per_sample)
+    block_lengths = torch.full(
+        (samples * blocks_per_sample,), 2, dtype=torch.long
+    )
 
     # Protein-only: edge_mask is false, while mask marks all atoms as valid.
     edge_mask = torch.zeros(atoms, dtype=torch.bool)
@@ -71,6 +83,10 @@ def build_synthetic_batch(
         "b0": x0.to(device),
         "atype": atype.to(device),
         "btype": btype.to(device),
+        "atom_block_id": atom_block_id.to(device),
+        "block_type": block_type.to(device),
+        "block_batch": block_batch.to(device),
+        "block_lengths": block_lengths.to(device),
         "abid": abid.to(device),
         "mask": mask.to(device),
         "edge_mask": edge_mask.to(device),
@@ -98,6 +114,22 @@ def build_model(args: argparse.Namespace) -> dyVAE:
         re_weight=1.0,
         using_ode=args.using_ode,
         backbone="torchmdnet",
+        fusion_mode=args.fusion_mode,
+        anew_encoder_config=(
+            {
+                "hidden_size": args.anew_hidden_dim,
+                "ffn_size": args.anew_ffn_dim,
+                "edge_size": args.anew_edge_size,
+                "n_rbf": args.anew_rbf_dim,
+                "cutoff": args.anew_cutoff,
+                "n_layers": args.anew_layers,
+                "n_head": args.anew_heads,
+                "k_neighbors": args.anew_k_neighbors,
+                "sparse_k": args.anew_sparse_k,
+            }
+            if args.fusion_mode == "anew_block"
+            else None
+        ),
     )
 
 
@@ -175,6 +207,7 @@ def run_profile(args: argparse.Namespace) -> Dict[str, object]:
             "layers": args.layers,
             "k_neighbors": args.k_neighbors,
             "using_ode": args.using_ode,
+            "fusion_mode": args.fusion_mode,
         },
         "measurements": measurements,
     }
@@ -197,6 +230,16 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cutoff-upper", type=float, default=10.0)
     parser.add_argument("--additional-noise-scale", type=float, default=0.2)
     parser.add_argument("--using-ode", action="store_true")
+    parser.add_argument("--fusion-mode", choices=("off", "anew_block"), default="off")
+    parser.add_argument("--anew-hidden-dim", type=int, default=512)
+    parser.add_argument("--anew-ffn-dim", type=int, default=512)
+    parser.add_argument("--anew-edge-size", type=int, default=64)
+    parser.add_argument("--anew-rbf-dim", type=int, default=64)
+    parser.add_argument("--anew-cutoff", type=float, default=10.0)
+    parser.add_argument("--anew-layers", type=int, default=6)
+    parser.add_argument("--anew-heads", type=int, default=8)
+    parser.add_argument("--anew-k-neighbors", type=int, default=9)
+    parser.add_argument("--anew-sparse-k", type=int, default=3)
     return parser
 
 

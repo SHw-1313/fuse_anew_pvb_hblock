@@ -31,7 +31,7 @@ def compute_distances(traj, cutoff=0.45, contact_pairs=None):
                 for n2 in second_neighbors:
                     covalent_pairs.add((min(atom, n2), max(atom, n2)))
         # candidate pairs (all heavy atom pairs)
-        pairs = np.array([(i, j) for i in range(N) for j in range(i + 1, N) if (i, j) not in covalent_pairs], dtype=np.compat.long)
+        pairs = np.array([(i, j) for i in range(N) for j in range(i + 1, N) if (i, j) not in covalent_pairs], dtype=np.int64)
         dist0 = md.compute_distances(traj[0], pairs)
         contact_mask = dist0[0] < cutoff
         contact_pairs = pairs[contact_mask]

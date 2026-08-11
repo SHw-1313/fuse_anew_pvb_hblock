@@ -42,7 +42,9 @@ class dyVAE(nn.Module):
                  kl_weight=0.5,
                  re_weight=0.5,
                  using_ode=True,
-                 backbone="torchmdnet"
+                 backbone="torchmdnet",
+                 fusion_mode="off",
+                 anew_encoder_config=None
                 ):
         super(dyVAE, self).__init__()
 
@@ -62,6 +64,28 @@ class dyVAE(nn.Module):
         self.re_weight = re_weight
         self.using_ode = using_ode
         self.backbone = backbone
+        if fusion_mode not in {"off", "anew_block"}:
+            raise ValueError(
+                f"Unsupported fusion_mode={fusion_mode!r}; expected 'off' or 'anew_block'"
+            )
+        self.fusion_mode = fusion_mode
+
+        self.anew_block_encoder = None
+        self.block_projection = None
+        self.block_gate = None
+        self.anew_hidden_dim = None
+        if self.fusion_mode == "anew_block":
+            from .anew_block_encoder import AnewBlockEncoder
+
+            encoder_config = dict(anew_encoder_config or {})
+            encoder_config.setdefault("hidden_size", 512)
+            self.anew_hidden_dim = int(encoder_config["hidden_size"])
+            self.anew_block_encoder = AnewBlockEncoder(**encoder_config)
+            self.block_projection = nn.Sequential(
+                nn.LayerNorm(self.anew_hidden_dim),
+                nn.Linear(self.anew_hidden_dim, hidden_dim),
+            )
+            self.block_gate = nn.Parameter(torch.zeros(1))
 
         # encoder
         self.encoder = TorchMD_VQ_ET(
@@ -118,13 +142,59 @@ class dyVAE(nn.Module):
         x_rep = x_mu + torch.exp(x_log_var / 2) * torch.randn_like(x)
         return x_rep, kl_loss
 
-    def decode(self, z, b, x, t, batch, edge_index, edge_weight_0, edge_vec_0, edge_weight_t, edge_vec_t, bond_type):
+    def _encode_anew_block(self, x, batch, mask):
+        """Encode explicit protein blocks while keeping the PVB source mean."""
+
+        if self.fusion_mode != "anew_block" or self.anew_block_encoder is None:
+            raise RuntimeError("_encode_anew_block requires fusion_mode='anew_block'")
+        block_output = self.anew_block_encoder(
+            x_atom=x,
+            atom_type=batch["atype"],
+            block_type=batch["block_type"],
+            atom_block_id=batch["atom_block_id"],
+            block_batch=batch["block_batch"],
+            block_lengths=batch["block_lengths"],
+            bond_index=batch.get("bond_index"),
+            bond_type=batch.get("bond_type"),
+        )
+
+        # Milestone-one coordinate contract: Anew coordinates are diagnostic;
+        # the bridge source mean remains exactly the PVB input structure.
+        x_mu = x.clone()
+        atom_log_var = -torch.abs(
+            block_output["log_var_block"].index_select(
+                0, block_output["atom_block_id"]
+            )
+        ).expand(-1, x.shape[-1])
+        denominator = mask.sum().clamp_min(1).to(dtype=x.dtype)
+        kl_loss = -0.5 * torch.sum(
+            1.0
+            + atom_log_var[mask]
+            - math.log(self.coord_prior_var)
+            - torch.exp(atom_log_var[mask]) / self.coord_prior_var
+        ) / denominator
+        x_rep = x_mu + torch.exp(atom_log_var / 2) * torch.randn_like(x)
+        return x_rep, kl_loss, block_output
+
+    def _project_block_condition(self, block_output):
+        if self.fusion_mode != "anew_block":
+            return None
+        condition = self.block_projection(block_output["H_block"])
+        condition = condition.index_select(0, block_output["atom_block_id"])
+        # Keep the gate scalar explicit and shared by both decoder branches.
+        return torch.tanh(self.block_gate) * condition
+
+    def decode(self, z, b, x, t, batch, edge_index, edge_weight_0, edge_vec_0, edge_weight_t, edge_vec_t, bond_type, block_condition=None):
         if self.backbone == "torchmdnet":
             h, vec, _, _, _ = self.decoder(z=z, b=b, pos=x, batch=batch, t=t,edge_index=edge_index,
                                            edge_weight_0=edge_weight_0, edge_vec_0=edge_vec_0,
                                            edge_weight_t=edge_weight_t, edge_vec_t=edge_vec_t,
-                                           bond_type=bond_type)
+                                           bond_type=bond_type, block_condition=block_condition)
         elif self.backbone == "equiformer-v2":
+            if block_condition is not None:
+                raise NotImplementedError(
+                    "Anew block conditioning is only implemented for torchmdnet"
+                )
             h, vec = self.decoder(z=z, b=b, pos=x, batch=batch, t=t, edge_index=edge_index,
                                   edge_distance=edge_weight_t, edge_distance_vec=edge_vec_t,
                                   bond_type=bond_type)
@@ -154,15 +224,27 @@ class dyVAE(nn.Module):
 
         N = x0.shape[0]
         # encode
-        # construct edges
-        e_edge_index, e_edge_weight, e_edge_vec, e_bond_type = construct_edges(
-            Z=atype, X=x0, bid=abid, mask=edge_mask, bond_index=bond_index,
-            cutoff_lower=self.cutoff_lower,
-            cutoff_upper=self.cutoff_upper,
-            cutoff_H=self.cutoff_H,
-            k_neighbors=self.k_neighbors
-        )
-        x_rep, kl_loss = self.encode(atype, btype, x0, b0, abid, e_edge_index, e_edge_weight, e_edge_vec, e_bond_type, mask)
+        block_condition = None
+        if self.fusion_mode == "off":
+            # Preserve the original PVB encoder path for the baseline mode.
+            e_edge_index, e_edge_weight, e_edge_vec, e_bond_type = construct_edges(
+                Z=atype, X=x0, bid=abid, mask=edge_mask, bond_index=bond_index,
+                cutoff_lower=self.cutoff_lower,
+                cutoff_upper=self.cutoff_upper,
+                cutoff_H=self.cutoff_H,
+                k_neighbors=self.k_neighbors
+            )
+            x_rep, kl_loss = self.encode(
+                atype, btype, x0, b0, abid, e_edge_index, e_edge_weight,
+                e_edge_vec, e_bond_type, mask
+            )
+        else:
+            # Anew consumes the clean input and supplies block conditioning;
+            # its X outputs never replace the PVB bridge coordinates.
+            x_rep, kl_loss, block_output = self._encode_anew_block(
+                clean_x0, batch, mask
+            )
+            block_condition = self._project_block_condition(block_output)
 
         # in case of invalid data points
         if torch.any(torch.isnan(x_rep)):
@@ -201,7 +283,7 @@ class dyVAE(nn.Module):
             vel_pred = self.decode(atype, btype, xt, t_diff, abid, d_edge_index,
                                    d_edge_weight_0, d_edge_vec_0,
                                    d_edge_weight_t, d_edge_vec_t,
-                                   d_bond_type)
+                                   d_bond_type, block_condition=block_condition)
             rec_vel_loss = F.mse_loss(vel_pred[mask], velocity_gt[mask], reduction='mean')
             rec_drf_loss = 0.
             if torch.any(lig_mask):
@@ -210,7 +292,7 @@ class dyVAE(nn.Module):
             vel_pred, drf_pred = self.decode(atype, btype, xt, t_diff, abid, d_edge_index,
                                              d_edge_weight_0, d_edge_vec_0,
                                              d_edge_weight_t, d_edge_vec_t,
-                                             d_bond_type)
+                                             d_bond_type, block_condition=block_condition)
             rec_vel_loss = F.mse_loss(vel_pred[mask], velocity_gt[mask], reduction='mean')
             rec_drf_loss = F.mse_loss(drf_pred[mask], drf_gt[mask], reduction='mean')
             if torch.any(lig_mask):
@@ -226,15 +308,25 @@ class dyVAE(nn.Module):
         N = x.shape[0]
 
         # encode
-        # construct edges
-        e_edge_index, e_edge_weight, e_edge_vec, bond_type = construct_edges(
-            Z=z, X=x, bid=abid, mask=edge_mask, bond_index=bond_index,
-            cutoff_lower=self.cutoff_lower,
-            cutoff_upper=self.cutoff_upper,
-            cutoff_H=self.cutoff_H,
-            k_neighbors=self.k_neighbors
-        )
-        x_rep, _ = self.encode(z, b, x, x, abid, e_edge_index, e_edge_weight, e_edge_vec, bond_type, torch.ones_like(z).bool())
+        block_condition = None
+        if self.fusion_mode == "off":
+            # Preserve the original PVB encoder path for the baseline mode.
+            e_edge_index, e_edge_weight, e_edge_vec, bond_type = construct_edges(
+                Z=z, X=x, bid=abid, mask=edge_mask, bond_index=bond_index,
+                cutoff_lower=self.cutoff_lower,
+                cutoff_upper=self.cutoff_upper,
+                cutoff_H=self.cutoff_H,
+                k_neighbors=self.k_neighbors
+            )
+            x_rep, _ = self.encode(
+                z, b, x, x, abid, e_edge_index, e_edge_weight, e_edge_vec,
+                bond_type, torch.ones_like(z).bool()
+            )
+        else:
+            x_rep, _, block_output = self._encode_anew_block(
+                x, batch, torch.ones_like(z).bool()
+            )
+            block_condition = self._project_block_condition(block_output)
 
         xt = x_rep.clone()
         sde_step = np.linspace(0, 1. - 1. / sde_step, sde_step)
@@ -259,13 +351,13 @@ class dyVAE(nn.Module):
                 vel_pred = self.decode(z, b, xt, t_diff, abid, d_edge_index,
                                        d_edge_weight_0, d_edge_vec_0,
                                        d_edge_weight_t, d_edge_vec_t,
-                                       bond_type)
+                                       bond_type, block_condition=block_condition)
                 xt = xt + vel_pred * dt
             else:
                 vel_pred, drf_pred = self.decode(z, b, xt, t_diff, abid, d_edge_index,
                                                  d_edge_weight_0, d_edge_vec_0,
                                                  d_edge_weight_t, d_edge_vec_t,
-                                                 bond_type)
+                                                 bond_type, block_condition=block_condition)
                 # drift = INTERP_MATCHER.drift(vel_pred, den_pred, t, self.sigma)
                 drift = drf_pred
                 diffusion = INTERP_MATCHER.diffusion(self.sigma)
@@ -279,6 +371,19 @@ class dyVAE(nn.Module):
 
         # given x0
         xt = x0.clone()
+        block_condition = None
+        if self.fusion_mode == "anew_block":
+            block_output = self.anew_block_encoder(
+                x_atom=x0,
+                atom_type=batch["atype"],
+                block_type=batch["block_type"],
+                atom_block_id=batch["atom_block_id"],
+                block_batch=batch["block_batch"],
+                block_lengths=batch["block_lengths"],
+                bond_index=batch.get("bond_index"),
+                bond_type=batch.get("bond_type"),
+            )
+            block_condition = self._project_block_condition(block_output)
         trajs = [x0.detach().clone()]
         sde_step = np.linspace(0, 1. - 1. / sde_step, sde_step)
         dt = sde_step[1] - sde_step[0]
@@ -302,13 +407,13 @@ class dyVAE(nn.Module):
                 vel_pred = self.decode(z, b, xt, t_diff, abid, d_edge_index,
                                        d_edge_weight_0, d_edge_vec_0,
                                        d_edge_weight_t, d_edge_vec_t,
-                                       bond_type)
+                                       bond_type, block_condition=block_condition)
                 xt = xt + vel_pred * dt
             else:
                 vel_pred, drf_pred = self.decode(z, b, xt, t_diff, abid, d_edge_index,
                                                  d_edge_weight_0, d_edge_vec_0,
                                                  d_edge_weight_t, d_edge_vec_t,
-                                                 bond_type)
+                                                 bond_type, block_condition=block_condition)
                 # drift = INTERP_MATCHER.drift(vel_pred, den_pred, t, self.sigma)
                 drift = drf_pred
                 diffusion = INTERP_MATCHER.diffusion(self.sigma)
@@ -583,4 +688,3 @@ class GeoDPO(nn.Module):
     
     def inference(self, batch, sde_step=50):
         return self.opt.inference(batch, sde_step=sde_step)
-    

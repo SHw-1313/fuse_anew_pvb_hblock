@@ -95,7 +95,7 @@ def traj_analysis(gen_protein_path, gen_ligand_path, protein_path, ligand_path, 
     #         pocket_residues.append(residue)
     
     pocket_residues = [protein.topology.residue(r) for r in pocket_idx]
-    pocket_atom_index = np.concatenate([[a.index for a in res.atoms] for res in pocket_residues], dtype=np.compat.long)
+    pocket_atom_index = np.concatenate([[a.index for a in res.atoms] for res in pocket_residues], dtype=np.int64)
     gen_protein_traj = md.load(gen_protein_path, top=protein.topology)
     gen_pocket_traj = gen_protein_traj.atom_slice(pocket_atom_index)
 

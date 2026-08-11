@@ -67,7 +67,9 @@ def preprocess_atlas(split_path, delta=1, _type="train"):
                 atom_indices = list(range(atype.shape[0]))
                 centers = [np.random.choice(atom_indices[i * SG_THRESH: (i + 1) * SG_THRESH]) for i in range(n_subgraph - 1)]
                 for center in centers:
-                    max_indices, mask = graph_cut(x0, xc=x0[center], radius_min=15.0, radius_max=25.0)
+                    max_indices, mask = graph_cut(
+                        x0, xc=x0[center], radius_min=15.0, radius_max=25.0, block_id=b_index
+                    )
                     max_indices_list = list(max_indices)
                     # re-index bond index
                     index_mapping = {x: max_indices_list.index(x) for x in max_indices}
@@ -79,7 +81,7 @@ def preprocess_atlas(split_path, delta=1, _type="train"):
                         if begin == -1 or end == -1:
                             continue
                         bond_index_slice.append([begin, end])
-                    bond_index_slice = np.array(bond_index_slice, dtype=np.compat.long).T
+                    bond_index_slice = np.array(bond_index_slice, dtype=np.int64).T
 
                     x0_slice = x0[max_indices]
                     b0_slice = b0[max_indices]

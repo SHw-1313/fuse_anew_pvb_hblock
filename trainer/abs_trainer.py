@@ -12,6 +12,11 @@ import torch
 
 from utils.logger import print_log
 from utils.ema import EMA
+from utils.fusion_training import (
+    configure_fusion_parameters,
+    fusion_gradient_norms,
+    fusion_parameter_groups,
+)
 
 
 def replace_nan_gradients(model):
@@ -44,6 +49,11 @@ class Trainer:
     def __init__(self, model, train_loader, valid_loader, config):
         self.model = model
         self.config = config
+        self.fusion_training_info = configure_fusion_parameters(
+            self.model,
+            stage=getattr(self.config, 'fusion_stage', 'standard'),
+            unfreeze_ept_layers=getattr(self.config, 'unfreeze_ept_layers', 2),
+        )
         self.ema = self.get_ema()
         self.optimizer = self.get_optimizer()
         warmup_config = self.get_warmup_scheduler(self.optimizer)
@@ -113,12 +123,16 @@ class Trainer:
         for batch in t_iter:
             batch = self.to_device(batch, device)
             try:
-                loss = self.train_step(batch, self.global_step)
+                with self._autocast_context(device):
+                    loss = self.train_step(batch, self.global_step)
                 if torch.isnan(loss):
                     print_log('encounter NaN loss, skip batch', level='WARN')
                     continue
                 # torch.autograd.set_detect_anomaly(True)
                 loss.backward()
+                if getattr(self.model, 'fusion_mode', 'off') == 'anew_block':
+                    for name, value in fusion_gradient_norms(self.model).items():
+                        self.log(f'Fusion/{name}', value, self.global_step)
                 replace_nan_gradients(self.model)
             except RuntimeError as e:
                 if 'out of memory' in str(e):
@@ -159,7 +173,8 @@ class Trainer:
             t_iter = tqdm(self.valid_loader) if self._is_main_proc() else self.valid_loader
             for batch in t_iter:
                 batch = self.to_device(batch, device)
-                metric = self.valid_step(batch, self.valid_global_step)
+                with self._autocast_context(device):
+                    metric = self.valid_step(batch, self.valid_global_step)
                 if torch.isnan(metric):
                     print_log('encounter NaN metric, skip batch', level='WARN')
                     continue
@@ -194,7 +209,25 @@ class Trainer:
                 self.patience = self.config.patience
                 save_path = os.path.join(self.model_dir, f'epoch{self.epoch}_step{self.global_step}.ckpt')
                 module_to_save = self.model.module if self.local_rank == 0 else self.model
-                torch.save(module_to_save, save_path)
+                checkpoint = {
+                    'format_version': 1,
+                    'model_state_dict': module_to_save.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    'warmup_scheduler_state_dict': self.warmup_scheduler.state_dict() \
+                        if self.warmup_scheduler is not None else None,
+                    'scheduler_state_dict': self.scheduler.state_dict() \
+                        if self.scheduler is not None else None,
+                    'epoch': self.epoch,
+                    'global_step': self.global_step,
+                    'valid_global_step': self.valid_global_step,
+                    'best_metric': valid_metric,
+                    'patience': self.patience,
+                }
+                if self.ema is not None:
+                    checkpoint['ema_model_state_dict'] = self.ema.ema_model.state_dict()
+                    checkpoint['ema_initted'] = self.ema.initted.detach().cpu()
+                    checkpoint['ema_step'] = self.ema.step.detach().cpu()
+                torch.save(checkpoint, save_path)
                 self._maintain_topk_checkpoint(valid_metric, save_path)
             else:
                 self.patience -= 1
@@ -225,6 +258,12 @@ class Trainer:
             return new < old
         else:
             return old < new
+
+    def _autocast_context(self, device):
+        enabled = bool(getattr(self.config, 'bf16_autocast', False))
+        if device.type not in {'cuda', 'cpu'}:
+            enabled = False
+        return torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=enabled)
 
     def _maintain_topk_checkpoint(self, valid_metric, ckpt_path):
         topk = self.config.save_topk
@@ -284,6 +323,27 @@ class Trainer:
             if self.patience <= 0:
                 break
 
+    def restore_resume_state(self, metadata):
+        """Restore non-model state after the trainer has built its optimizers."""
+
+        if metadata.get('optimizer_state_dict') is not None:
+            self.optimizer.load_state_dict(metadata['optimizer_state_dict'])
+        if self.warmup_scheduler is not None and metadata.get('warmup_scheduler_state_dict') is not None:
+            self.warmup_scheduler.load_state_dict(metadata['warmup_scheduler_state_dict'])
+        if self.scheduler is not None and metadata.get('scheduler_state_dict') is not None:
+            self.scheduler.load_state_dict(metadata['scheduler_state_dict'])
+        if self.ema is not None and metadata.get('ema_model_state_dict') is not None:
+            self.ema.ema_model.load_state_dict(metadata['ema_model_state_dict'])
+            if metadata.get('ema_initted') is not None:
+                self.ema.initted.copy_(metadata['ema_initted'].to(self.ema.initted.device))
+            if metadata.get('ema_step') is not None:
+                self.ema.step.copy_(metadata['ema_step'].to(self.ema.step.device))
+        self.epoch = int(metadata.get('epoch', self.epoch))
+        self.global_step = int(metadata.get('global_step', self.global_step))
+        self.valid_global_step = int(metadata.get('valid_global_step', self.valid_global_step))
+        self.last_valid_metric = metadata.get('best_metric', self.last_valid_metric)
+        self.patience = int(metadata.get('patience', self.patience))
+
     def log(self, name, value, step, val=False, accumulation=False):
         if self._is_main_proc():
             if isinstance(value, torch.Tensor):
@@ -307,6 +367,16 @@ class Trainer:
 
     # define optimizer
     def get_optimizer(self):
+        if getattr(self.model, 'fusion_mode', 'off') == 'anew_block':
+            groups = fusion_parameter_groups(
+                self.model,
+                pvb_lr=getattr(self.config, 'pvb_lr', self.config.lr),
+                anew_lr=getattr(self.config, 'anew_lr', self.config.lr),
+                projector_lr=getattr(self.config, 'projector_lr', self.config.lr),
+            )
+            if not groups:
+                raise ValueError('Anew fusion has no trainable parameters after stage configuration')
+            return torch.optim.Adam(groups, eps=1e-8)
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config.lr, eps=1e-8)
         return optimizer
 

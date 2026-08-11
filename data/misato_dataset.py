@@ -139,7 +139,7 @@ def preprocess_misato_pl(md_data_file, idx_file, rst_path):
             # threshold = 20.0 Angstrom
             if min_distance <= 20.0:
                 pocket_residues.append(residue)
-        pocket_bb_idx = np.concatenate([[a.index for a in res.atoms if (a.name == 'CA' or a.name == 'C' or a.name == 'N')] for res in pocket_residues], dtype=np.compat.long)
+        pocket_bb_idx = np.concatenate([[a.index for a in res.atoms if (a.name == 'CA' or a.name == 'C' or a.name == 'N')] for res in pocket_residues], dtype=np.int64)
 
         traj = md.Trajectory(xyz / 10.0, top)
         traj = traj.superpose(traj, atom_indices=pocket_bb_idx, ref_atom_indices=pocket_bb_idx)
@@ -153,7 +153,9 @@ def preprocess_misato_pl(md_data_file, idx_file, rst_path):
 
             # subgraph
             xc = x0[edge_mask == 1].mean(axis=0)    # ligand center
-            max_indices, mask = graph_cut(x0, radius_min=15.0, radius_max=25.0, xc=xc)
+            max_indices, mask = graph_cut(
+                x0, radius_min=15.0, radius_max=25.0, xc=xc, block_id=b_index
+            )
             max_indices_list = list(max_indices)
             
             # re-index bond index
@@ -166,7 +168,7 @@ def preprocess_misato_pl(md_data_file, idx_file, rst_path):
                 if begin == -1 or end == -1:
                     continue
                 bond_index_slice.append([begin, end])
-            bond_index_slice = np.array(bond_index_slice, dtype=np.compat.long).T
+            bond_index_slice = np.array(bond_index_slice, dtype=np.int64).T
 
             x0 = x0 - xc
             b0 = b0 - xc

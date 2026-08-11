@@ -50,17 +50,24 @@ def preprocess_pdbbind(split_path):
         l_bond_index += Np
         bond_index = np.hstack([p_bond_index, l_bond_index])
 
-        atype = np.concatenate([Zp, Zl], dtype=np.compat.long)
-        btype = np.concatenate([Bp, Bl], dtype=np.compat.long)
+        atype = np.concatenate([Zp, Zl], dtype=np.int64)
+        btype = np.concatenate([Bp, Bl], dtype=np.int64)
+        block_id = np.concatenate([bp_index, bl_index + int(bp_index.max()) + 1])
 
         holo_pos = positions[0]
         x_ref = np.concatenate([holo_pos[:-ligand_num][ap_index], holo_pos[-ligand_num:][al_index]])
 
         # holo
-        edge_mask = np.array([0] * Np + [1] * Nl, dtype=np.compat.long)   # 0: pocket, 1: ligand
+        edge_mask = np.array([0] * Np + [1] * Nl, dtype=np.int64)   # 0: pocket, 1: ligand
 
         # subgraph
-        max_indices, mask = graph_cut(x_ref, radius_min=10.0, radius_max=20.0, xc=x_ref[edge_mask == 1].mean(axis=0))
+        max_indices, mask = graph_cut(
+            x_ref,
+            radius_min=10.0,
+            radius_max=20.0,
+            xc=x_ref[edge_mask == 1].mean(axis=0),
+            block_id=block_id,
+        )
         max_indices_list = list(max_indices)
         
         # re-index bond index
@@ -73,7 +80,7 @@ def preprocess_pdbbind(split_path):
             if begin == -1 or end == -1:
                 continue
             bond_index_slice.append([begin, end])
-        bond_index_slice = np.array(bond_index_slice, dtype=np.compat.long).T
+        bond_index_slice = np.array(bond_index_slice, dtype=np.int64).T
 
         for i in range(T):
             ppos, lpos = positions[i, :-ligand_num], positions[i, -ligand_num:]

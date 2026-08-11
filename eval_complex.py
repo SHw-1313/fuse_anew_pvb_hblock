@@ -60,8 +60,8 @@ def traj_analysis(traj_model_path, traj_ref_path, top=None, lagtime=10, use_dist
         # threshold = 20.0 Angstrom
         if min_distance <= 20.0:
             pocket_residues.append(residue)
-    pocket_idx = np.concatenate([[a.index for a in res.atoms] for res in pocket_residues], dtype=np.compat.long)
-    pocket_bb_idx = np.concatenate([[a.index for a in res.atoms if (a.name == 'CA' or a.name == 'C' or a.name == 'N')] for res in pocket_residues], dtype=np.compat.long)
+    pocket_idx = np.concatenate([[a.index for a in res.atoms] for res in pocket_residues], dtype=np.int64)
+    pocket_bb_idx = np.concatenate([[a.index for a in res.atoms if (a.name == 'CA' or a.name == 'C' or a.name == 'N')] for res in pocket_residues], dtype=np.int64)
     
     ### ====== Ligand pose RMSD ======
     traj_ref_aligned = traj_ref.superpose(ref, atom_indices=pocket_bb_idx, ref_atom_indices=pocket_bb_idx)

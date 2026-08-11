@@ -1,11 +1,14 @@
 import torch
 
+from .block_metadata import collate_block_metadata
+
 
 def collate_fn(batch):
     batch = batch[0]    # wrapper
     # in case of len 0
     new_batch = [item for item in batch if len(item["atype"]) > 0]
     batch = new_batch
+    block_metadata = collate_block_metadata(batch)
     pair_flag = batch[0].get("x1") is not None
 
     if pair_flag:
@@ -46,6 +49,7 @@ def collate_fn(batch):
         abid.extend([i] * len(item["atype"]))
         i += 1
     res["abid"] = torch.tensor(abid, dtype=torch.long)  # (N,)
+    res.update(block_metadata)
 
     # # environment
     # res["env"] = batch[0]["env"]
