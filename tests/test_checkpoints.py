@@ -64,7 +64,30 @@ class TestCheckpoints(unittest.TestCase):
             report = load_role_checkpoint(target, path, "anew", min_coverage=1.0)
         self.assertEqual(report.coverage, 1.0)
         self.assertFalse(report.missing_keys)
+        self.assertEqual(
+            report.source_keys["anew_block_encoder.embedding.atom_embedding.weight"],
+            "embedding.atom_embedding.weight",
+        )
 
+    def test_legacy_fused_anew_namespace_is_translated(self):
+        source = _model("anew_block")
+        target = _model("anew_block")
+        source_state = {}
+        for key, value in source.anew_block_encoder.state_dict().items():
+            if key.startswith("block_edge_embedding."):
+                key = "edge_embedding." + key[len("block_edge_embedding."):]
+            source_state["anew_encoder." + key] = value.clone()
+        source_state["anew_encoder.ctx_embedding.weight"] = torch.zeros(2, 16)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy_fused.ckpt"
+            torch.save({"state_dict": source_state}, path)
+            report = load_role_checkpoint(target, path, "anew", min_coverage=1.0)
+        self.assertEqual(report.coverage, 1.0)
+        self.assertEqual(
+            report.source_keys["anew_block_encoder.embedding.atom_embedding.weight"],
+            "anew_encoder.embedding.atom_embedding.weight",
+        )
+        self.assertIn("anew_encoder.ctx_embedding.weight", report.unexpected_keys)
     def test_resume_restores_model_and_optimizer_state(self):
         source = _model("anew_block")
         optimizer = torch.optim.Adam(source.parameters(), lr=1e-3)

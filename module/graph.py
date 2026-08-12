@@ -25,6 +25,17 @@ def sequential_and(*tensors):
 
 
 def edge_inclusion_mask(edge_index, bond_index):
+    # Molecular records may legitimately contain no explicit bonds.  Preserve
+    # the edge feature contract with an all-zero mask instead of reducing an
+    # empty tensor with max().
+    if edge_index.numel() == 0:
+        return torch.zeros(
+            edge_index.shape[1], dtype=torch.long, device=edge_index.device
+        )
+    if bond_index.numel() == 0:
+        return torch.zeros(
+            edge_index.shape[1], dtype=torch.long, device=edge_index.device
+        )
     num_nodes = max(edge_index.max(), bond_index.max()).item() + 1
 
     # unique encoding: src * num_nodes + dst

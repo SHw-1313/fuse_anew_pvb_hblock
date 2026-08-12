@@ -53,6 +53,7 @@ class Trainer:
             self.model,
             stage=getattr(self.config, 'fusion_stage', 'standard'),
             unfreeze_ept_layers=getattr(self.config, 'unfreeze_ept_layers', 2),
+            source_keys=getattr(self.model, '_source_checkpoint_keys', None),
         )
         self.ema = self.get_ema()
         self.optimizer = self.get_optimizer()

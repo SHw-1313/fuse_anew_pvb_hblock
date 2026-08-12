@@ -58,7 +58,7 @@ model:
   backbone: torchmdnet                  # backbone module type, default: torchmdnet, DO NOT CHANGE
   fusion:
     mode: off                           # off or anew_block
-    stage: standard                     # standard, A, B, or C when fusion is enabled
+    stage: standard                     # standard, adapter, source_frozen, A, B, or C when fusion is enabled
     pvb_lr: 0.0001
     anew_lr: 0.00001
     projector_lr: 0.0001

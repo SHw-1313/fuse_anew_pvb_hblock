@@ -26,6 +26,7 @@ class CheckpointReport:
     role: str
     path: str
     matched_keys: list[str] = field(default_factory=list)
+    source_keys: Dict[str, str] = field(default_factory=dict)
     missing_keys: list[str] = field(default_factory=list)
     unexpected_keys: list[str] = field(default_factory=list)
     shape_mismatches: Dict[str, Dict[str, Any]] = field(default_factory=dict)
@@ -111,6 +112,8 @@ def _translate_key(source_key: str, role: str) -> Optional[str]:
     if role == "resume":
         return key
     if role == "anew":
+        if key.startswith("anew_encoder."):
+            key = key[len("anew_encoder."):]
         if key.startswith("anew_block_encoder."):
             return key
         prefix_map = (
@@ -156,6 +159,7 @@ def _load_role_payload(
             continue
         translated[target_key] = value
         report.matched_keys.append(target_key)
+        report.source_keys[target_key] = source_key
 
     report.missing_keys = sorted(expected_keys.difference(report.matched_keys))
     report.matched_keys.sort()

@@ -80,18 +80,23 @@ def build_dyvae_from_config(args):
         )
     min_coverage = float(getattr(args.model, "checkpoint_min_coverage", 0.95))
     model._resume_metadata = None
+    source_checkpoint_keys = set()
     if resume_checkpoint:
-        _, metadata = load_resume_checkpoint(
+        resume_report, metadata = load_resume_checkpoint(
             model, resume_checkpoint, min_coverage=min_coverage
         )
+        source_checkpoint_keys.update(resume_report.matched_keys)
         model._resume_metadata = metadata
     else:
         if pvb_checkpoint:
-            load_role_checkpoint(model, pvb_checkpoint, "pvb", min_coverage=min_coverage)
+            pvb_report = load_role_checkpoint(model, pvb_checkpoint, "pvb", min_coverage=min_coverage)
+            source_checkpoint_keys.update(pvb_report.matched_keys)
         if anew_checkpoint:
             if fusion_mode != "anew_block":
                 raise ValueError("model.anew_checkpoint requires fusion.mode=anew_block")
-            load_role_checkpoint(model, anew_checkpoint, "anew", min_coverage=min_coverage)
+            anew_report = load_role_checkpoint(model, anew_checkpoint, "anew", min_coverage=min_coverage)
+            source_checkpoint_keys.update(anew_report.matched_keys)
+    model._source_checkpoint_keys = frozenset(source_checkpoint_keys)
     return model
 
 

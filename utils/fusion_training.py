@@ -19,18 +19,23 @@ def configure_fusion_parameters(
     model: nn.Module,
     stage: str = "standard",
     unfreeze_ept_layers: int = 2,
+    source_keys: Iterable[str] | None = None,
 ) -> Dict[str, int]:
-    """Set ``requires_grad`` for stages A/B/C of the block-fusion schedule.
+    """Set ``requires_grad`` for the adapter and staged fusion schedules.
 
-    Stage A trains the PVB decoder/heads, projector, and gate while freezing
-    all Anew parameters. Stage B adds only the last N Anew EPT layers. Stage C
-    unfreezes the complete fused model after the earlier checks are stable.
+    The ``adapter`` stage freezes all original PVB/Anew network parameters and
+    trains only the newly introduced block projector and scalar gate. Stage A
+    trains the PVB decoder/heads as well, Stage B adds the last N Anew EPT
+    layers, and Stage C unfreezes the complete fused model.
+    ``source_frozen`` freezes the union of keys loaded from the PVB/Anew
+    checkpoint roles and leaves only non-source-loaded parameters trainable.
+
     """
 
     model = unwrap_model(model)
     stage = str(stage).upper()
-    if stage not in {"STANDARD", "A", "B", "C"}:
-        raise ValueError("fusion training stage must be standard, A, B, or C")
+    if stage not in {"STANDARD", "ADAPTER", "SOURCE_FROZEN", "A", "B", "C"}:
+        raise ValueError("fusion training stage must be standard, adapter, source_frozen, A, B, or C")
 
     if getattr(model, "fusion_mode", "off") != "anew_block" or stage == "STANDARD":
         for parameter in model.parameters():
@@ -41,6 +46,20 @@ def configure_fusion_parameters(
         parameter.requires_grad = False
 
     pvb_prefixes = ("decoder.", "vel_ffn.", "drf_ffn.", "block_projection.")
+    if stage == "SOURCE_FROZEN":
+        loaded_keys = set(source_keys if source_keys is not None else getattr(model, "_source_checkpoint_keys", ()))
+        if not loaded_keys:
+            raise ValueError("source_frozen requires matched checkpoint keys on the fused model")
+        for name, parameter in model.named_parameters():
+            parameter.requires_grad = name not in loaded_keys
+        total = sum(1 for _ in model.parameters())
+        return {"trainable": sum(p.requires_grad for p in model.parameters()), "total": total}
+    if stage == "ADAPTER":
+        for name, parameter in model.named_parameters():
+            if name == "block_gate" or name.startswith("block_projection."):
+                parameter.requires_grad = True
+        total = sum(1 for _ in model.parameters())
+        return {"trainable": sum(p.requires_grad for p in model.parameters()), "total": total}
     for name, parameter in model.named_parameters():
         if name == "block_gate" or name.startswith(pvb_prefixes):
             parameter.requires_grad = True

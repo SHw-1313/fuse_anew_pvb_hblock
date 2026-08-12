@@ -819,3 +819,230 @@ Gate P4: PASSED; parity, gradients, and both one-batch overfit checks succeed.
   - Tests: changed-file and benchmark review
   - Result: Passed; final changed-file list and multi-scale baseline/H-block benchmark table are recorded in `HANDOFF.md`.
   - Commit: 62ceeb4 (implementation; this task also includes the final documentation follow-up)
+
+## Phase 8 — Performance diagnosis
+
+- [x] T800 Update profiling with CUDA-event warmup, repeated measurements, and p50/p90 statistics.
+
+  Evidence:
+  - Source files: existing `scripts/profile_components.py` timing wrappers and PVB/Anew model paths.
+  - Target files: `scripts/profile_components.py`.
+  - Commands: `python -m py_compile scripts/profile_components.py`; CPU off/fused smoke; CUDA off/fused smoke with `--warmup-steps 1 --steps 2`.
+  - Tests: finite CPU and CUDA losses; warmup excluded from measurements; CUDA event timing and allocated/reserved memory fields present.
+  - Result: Passed; profiler now reports forward, backward, optimizer, graph, encoder, decoder, p50/p90/std/CV, and raw measurements. Two CUDA smoke modes completed with finite values.
+  - Commit: pending.
+
+- [x] T801 Re-run the synthetic scaling curve at 512/1024/1536/1800/2000/2048 atoms.
+
+  Evidence:
+  - Source files: PVB `module/model.py`, PVB `module/torchmd_et.py`, and vendored Anew EPT/graph paths.
+  - Target files: `scripts/profile_components.py`; raw profiles under `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase8/profiles/`.
+  - Commands: 12 CUDA runs on `cuda:5`, each with `--warmup-steps 10 --steps 20`, covering `off` and `anew_block` at 512/1024/1536/1800/2000/2048 atoms.
+  - Tests: all 12 JSON outputs have 20 finite measured steps; focused target suite `python -m unittest discover -s tests -v` passed 22 tests.
+  - Result: Passed; Anew H-block p50 step time is `0.259745 s` at 1800, `0.279082 s` at 2000, and `0.289102 s` at 2048 (`+7.44%`, then `+3.59%`). There is no 2000-atom discontinuity or OOM. H-block is `1.44–1.65×` the PVB `off` step time across the measured range, so real-batch and operator-level profiling remain necessary.
+  - Commit: pending.
+
+- [x] T802 Profile real PDBBind batches and record atom, padding, block, and edge distributions.
+
+  Evidence:
+  - Source files: `data/mmap_dataset.py`, `data/dataset_wrapper.py`, `data/block_metadata.py`, and `/data/pvb_cross_dataset_20260810/blocks/pdbbind/`.
+  - Target files: `scripts/profile_real_batches.py`; `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase8/real_batches/pdbbind_profile.json`.
+  - Commands: `python -m scripts.profile_real_batches --dataset-root /data/pvb_cross_dataset_20260810/blocks --dataset pdbbind --max-records 100 --budgets 2000 4000000 8000000 --max-groups 8`.
+  - Tests: `python -m py_compile scripts/profile_real_batches.py`; JSON parse and summary validation; 100 records inspected per split.
+  - Result: Passed; PDBBind raw records use legacy CPU metadata fallback (100/100 per split), with atom p50 `2228.5/2193/1738` for train/valid/test and unsupported element-block atoms p50 `26/25/29`. The default `n*n` budget `2000` forms zero groups and skips every PDBBind record; budgets `4e6` and `8e6` produce usable groups. Representative hypothetical padding ratios range from `0.58` to `1.00`.
+  - Commit: pending.
+
+- [x] T803 Compare all-trainable, source-frozen adapter, and forward-only execution.
+
+  Evidence:
+  - Source files: legacy fused/PVB checkpoint state dictionaries; `utils/checkpoint.py`; PVB `module/model.py`.
+  - Target files: `utils/checkpoint.py`, `utils/fusion_training.py`, `train.py`, `trainer/abs_trainer.py`, `data/protein_view.py`, `scripts/profile_training_paths.py`, and `tests/test_checkpoints.py` / `tests/test_training_stages.py`.
+  - Commands: checkpoint coverage audit; `python -m unittest tests.test_checkpoints tests.test_training_stages -v`; `CUDA_VISIBLE_DEVICES=5 python -m scripts.profile_training_paths ... --record-index 0`.
+  - Tests: PVB decoder/head coverage `150/150`; Anew H-block coverage `68/68`; zero shape mismatches; protein-only view `2147` atoms/`282` blocks/`4368` bonds; all three execution modes finite.
+  - Result: Passed. All-trainable `169.3 ms`, `14.75 GiB`, `10,949,066` trainable parameters; strict adapter `114.1 ms`, `9.53 GiB`, `33,281` trainable parameters; forward-only `68.3 ms`, `1.81 GiB`. Adapter gradients are finite and include the projector/gate path.
+  - Commit: pending.
+- [x] T804 Run PyTorch profiler on representative 1024- and 2000-atom batches.
+
+  Evidence:
+  - Source files: PVB graph/decoder, vendored Anew EPT/GET tools, and real PDBBind block records.
+  - Target files: `scripts/profile_operator.py`; `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase8/operator/*.json` and `*.json.gz`.
+  - Commands: `python -m py_compile scripts/profile_operator.py`; `CUDA_VISIBLE_DEVICES=5 python -m scripts.profile_operator ... --record-index 24 --row-limit 500`; same command with `--record-index 0`.
+  - Tests: both reports parsed successfully, contain CUDA operator events, nested Anew KNN/EPT scopes, peak-memory measurements, and Chrome traces.
+  - Result: Passed; real protein-only representatives were `911` atoms/`109` blocks and `2147` atoms/`282` blocks, bracketing the requested 1024/2000 sizes.
+  - Commit: pending.
+
+- [x] T805 Attribute the scaling to graph construction, dense EPT attention, memory, and backward.
+
+  Evidence:
+  - Source files: `third_party/anewomni/models/modules/EPT/ept.py`, `third_party/anewomni/models/modules/GET/tools.py`, PVB `module/graph.py`, and `module/torchmd_et.py`.
+  - Target files: `scripts/profile_operator.py`; phase-8 operator reports; `PLAN.md`, `DECISIONS.md`, and `HANDOFF.md`.
+  - Commands: JSON operator-event extraction; source inspection of `Transformer.forward`, `SelfAttnLayer.forward`, `knn_edges`, and `_unit_edges_from_block_edges`.
+  - Tests: dense attention, block-KNN, PVB graph, decoder, backward, and peak-memory events were present in both traces.
+  - Result: Passed. EPT attention uses padded dense tensors `[1,4,912,912]` and `[1,4,2152,2152]`; representative softmax/batched-attention allocations grow from about `26.6/53.2 MiB` to `148.2/296.4 MiB`. Anew block-KNN construction was about `51.9/53.9 ms`, Anew EPT about `35.5/65.9 ms`, and peak allocation was `6.31/14.75 GiB` for `911/2147` atoms. The earlier 2000-atom discontinuity is not established; the dominant mechanism is dense atom-level EPT attention plus repeated block-candidate construction, with PVB graph/decoder and backward also scaling.
+  - Commit: pending.
+
+- [x] T806 Record the root cause and decide whether a separate `block_sparse` mode is needed.
+
+  Evidence:
+  - Source files: `data/dataset_wrapper.py`, vendored `graph_to_batch_nx`, T801/T802 profiles, and T804/T805 operator traces.
+  - Target files: `scripts/profile_real_batches.py`; `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase8/real_batches/pdbind_profile.json`; planning files.
+  - Commands: `python -m py_compile scripts/profile_real_batches.py`; real PDBBind profile with `n*n` budgets `2000/4e6/8e6`; sampled `get_len` versus materialized atom-count audit.
+  - Tests: 100 records per split plus representative dynamic groups; exact padded attention work and stale-length ratios were computed.
+  - Result: Passed. `get_len` underestimates materialized raw atom counts for all sampled records, with median estimator/actual ratios `0.726/0.742/0.738` for train/valid/test. Multi-record groups can also pay `count * ceil(max_N/8)^2`; representative attention-work ratios were as low as `0.516` of the padded work. The faithful path remains unchanged; no `block_sparse` mode is approved yet. Phase 8 gate passed.
+  - Commit: pending.
+
+Gate P8: timing evidence must be stable and operator-level before performance changes are introduced.
+
+## Phase 9 — Source-frozen adapter training and evaluation
+
+- [x] T900 Download the official Anew checkpoint and record URL, size, and SHA256.
+
+  Evidence:
+  - Source files: official Anew release URL `https://github.com/bytedance/AnewOmni/releases/download/init/model.ckpt`.
+  - Target files: `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/checkpoints/anew_official_model.ckpt`; derived encoder state dict and `/tmp/anew_official_audit.txt`.
+  - Commands: `curl -L --fail --retry 3 ...`; `stat -c '%s %n'`; `sha256sum`; source-environment `torch.load(...).state_dict()` extraction.
+  - Tests: official payload type/key count, encoder dimensions, derived artifact size/hash, and current-model role-loader audit.
+  - Result: Passed provenance. Official file is `722534016` bytes with SHA256 `961599acb617b8baf742755b4416322979507c9814ebd1a1e8582cff9c0a74c1`; it is `models.confidence.model.Confidence` with `786` state keys and official Anew encoder dimensions `512/64/6/8`.
+  - Commit: pending.
+
+- [x] T901 Audit PVB/Anew architecture compatibility, key translation, and coverage.
+
+  Evidence:
+  - Source files: official Anew state dict; previous fused/PVB state dict artifacts; `utils/checkpoint.py`.
+  - Target files: `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/checkpoints/anew_official_encoder_state_dict.pt`; role audit reports; current fusion loader.
+  - Commands: `python -m scripts.profile_operator` model construction; official role-loader audit with `min_coverage=0`; legacy role audit from T803; shape/key report extraction.
+  - Tests: official and legacy PVB/Anew role reports, translation fixture tests, and full target suite.
+  - Result: Official Anew maps to only `1/68` current Anew keys (`1.47%`), with `67` shape mismatches and `259` unexpected keys because the release is `512/64/6/8` while the requested fused model is `128/16/2/4`. The previous shape-matched fused state dict remains valid at PVB `150/150` and Anew `68/68`, with zero shape mismatches. The official checkpoint is provenance-only; the requested run will use the prior fused Anew state dict and will not resize or partially load the official model.
+  - Commit: pending.
+
+- [x] T902 Generate a block-complete PDBBind protein-only train/valid/test view.
+
+  Evidence:
+  - Source files: `/data/pvb_cross_dataset_20260810/blocks/pdbbind/{train,valid,test}_block`, `data/protein_view.py`, `data/mmap_dataset.py`.
+  - Target files: `scripts/materialize_protein_view.py`; materialized views and manifests under `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/data/`.
+  - Commands: `PYTHONPATH=. python scripts/materialize_protein_view.py --manifest .../materialization_manifest.json`.
+  - Tests: full write/read verification in the materializer and exact-length profile on all three splits.
+  - Result: 6413/367/167 records materialized; source IDs preserved by SHA256; all output `get_len` values equal filtered atom counts; all selected blocks are complete protein residue blocks.
+  - Commit: pending.
+
+- [x] T903 Validate split identity, residue completeness, metadata, bonds, and batch isolation.
+
+  Evidence:
+  - Source files: materialized split views, `data/block_metadata.py`, `data/collate.py`, `tests/test_block_metadata.py`.
+  - Target files: `materialization_manifest.json`, `materialized_profile.json`, and `materialized_validation.json`.
+  - Commands: `PYTHONPATH=. python scripts/profile_real_batches.py --dataset-root .../phase9/data --dataset pdbind_protein_only --max-records 0 --budgets 4000000 8000000`; three-sample collate/isolation assertions.
+  - Tests: 28-test target suite plus full materialized split validation.
+  - Result: explicit metadata on every output record, zero unsupported atoms/mixed blocks, valid remapped bonds, preserved IDs, and batch-isolation checks passed for train/valid/test.
+  - Commit: pending.
+
+- [x] T904 Generate a fused checkpoint provenance manifest for every target key.
+
+  Evidence:
+  - Source files: `utils/checkpoint.py`, `scripts/audit_fused_provenance.py`, and the constructed `anew_block` model.
+  - Target files: `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/checkpoints/source_frozen_provenance.json` and its stdout copy.
+  - Commands: `python -m scripts.audit_fused_provenance --pvb-checkpoint .../pvb_state_dict.pt --anew-checkpoint .../legacy_fused_state_dict.pt`.
+  - Tests: per-target-key source-role/source-key/shape/dtype/parameter/checksum audit.
+  - Result: PVB `150/150` and Anew `68/68`; union `218` state keys / `217` parameter tensors / `9,090,374` parameters; complement `50` tensors / `1,858,692` parameters; all audit assertions passed. Manifest SHA256 is `f0371b437196f219f37feaba0d144a9461b7f986710bbe6991a46fa3aa973972`.
+  - Commit: pending.
+
+- [x] T905 Add a `source_frozen` stage that freezes the union of matched source keys.
+
+  Evidence:
+  - Source files: `utils/fusion_training.py`, `train.py`, and `trainer/abs_trainer.py`.
+  - Target files: same implementation paths and `tests/test_training_stages.py`.
+  - Commands: source-key union from both `CheckpointReport.matched_keys`; `configure_fusion_parameters(..., stage="source_frozen")`.
+  - Tests: source-frozen key-union and exact optimizer-complement tests.
+  - Result: every source-loaded target parameter has `requires_grad=False`; non-source keys are exposed for the optimizer audit.
+  - Commit: pending.
+
+- [x] T906 Restrict the optimizer to non-source-loaded parameters and print the complete key lists.
+
+  Evidence:
+  - Source files: `utils/fusion_training.py`, `scripts/audit_fused_provenance.py`.
+  - Target files: provenance manifest and `scripts/profile_training_paths.py`.
+  - Commands: optimizer ID-set audit and source-frozen real-batch profiler.
+  - Tests: exact optimizer membership assertion.
+  - Result: optimizer contains exactly the `50`-tensor / `1,858,692`-parameter source complement. The current `anew_block` path gives gradients to only the five projector/gate tensors; the other 45 complement tensors are structurally unused legacy PVB encoder/prior parameters and are reported explicitly rather than silently dropped.
+  - Commit: pending.
+
+- [x] T907 Add frozen checksum, gradient, and optimizer-membership tests.
+
+  Evidence:
+  - Source files: `utils/checkpoint.py`, `utils/fusion_training.py`, `tests/test_checkpoints.py`, `tests/test_training_stages.py`, and `scripts/source_frozen_overfit.py`.
+  - Target files: source-key tracking, exact-complement unit test, and checksum smoke script.
+  - Commands: `timeout 120 python -m unittest discover -s tests -v`.
+  - Tests: all 28 target tests passed; source-frozen smoke checks finite gradients, optimizer complement, and bitwise source checksums.
+  - Result: passed; all source-loaded tensors remain unchanged in the smoke run.
+  - Commit: pending.
+
+- [x] T908 Run source-frozen one-batch overfit and training smoke tests.
+
+  Evidence:
+  - Source files: materialized `train_block[0]`, PVB/Anew shape-matched state dictionaries, and fused model path.
+  - Target files: `scripts/source_frozen_overfit.py`; `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/profiles/source_frozen_overfit_lr1e3.json`.
+  - Commands: `CUDA_VISIBLE_DEVICES=5 python -m scripts.source_frozen_overfit ... --steps 20 --pvb-lr 1e-3 --projector-lr 1e-3`.
+  - Tests: fixed stochastic bridge draw, finite loss/gradients, source checksum equality, and exact optimizer complement.
+  - Result: `2147` atoms / `282` blocks / `4368` bonds; loss `1.0472314 → 1.0452697`; all checks passed. Artifact SHA256 is `556ad74993423212752d409464fdbda00884c8045f69f59e79ceab115cd640b1`.
+  - Commit: pending.
+
+- [x] T909 Train the adapter on PDBBind protein-only train and select by valid loss.
+
+  Evidence:
+  - Source files: `scripts/phase9_train_eval.py`, `data/protein_view.py`, `utils/fusion_training.py`, and the audited PVB/Anew role state dictionaries.
+  - Target files: `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/checkpoints/source_frozen_epoch1_best.ckpt`, `last.ckpt`, and `profiles/source_frozen_train_epoch1.json`.
+  - Commands: `CUDA_VISIBLE_DEVICES=5 timeout 86400 python -m scripts.phase9_train_eval --mode train_fused --epochs 1 --batch-budget 4000000 --max-atoms-per-batch 4096 --max-items-per-batch 8 --pvb-lr 1e-3 --projector-lr 1e-3 --anew-lr 1e-5 ...`.
+  - Tests: exact-length traversal, finite forward/backward gradients, source checksum audit, and exact optimizer-complement audit.
+  - Result: all `6413/6413` train records were used in `6203` exact batches (`14,666,461` atoms); `3929` oversized records were explicit singleton batches, not dropped. Full valid `367/367` records were used for selection (`354` batches, `239` oversized singletons); best batch-mean valid loss is `1.0267511`. Source union `218` keys / `9,090,374` parameters remained bitwise unchanged; optimizer complement is exact (`50` tensors / `1,858,692` parameters). Elapsed time was `2483.96 s`.
+  - Commit: pending.
+
+- [x] T910 Evaluate the existing PVB checkpoint on complete original valid/test splits only.
+
+  Evidence:
+  - Source files: `scripts/phase9_train_eval.py`, the original PVB valid/test mmap splits, and `/output/pvb_cross_dataset_20260810/performance_v1/pvb/checkpoints/version_0/checkpoint/epoch24_step74921.ckpt`.
+  - Target files: `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/profiles/pvb_epoch24_valid_test.json`.
+  - Commands: `CUDA_VISIBLE_DEVICES=5 timeout 86400 python -m scripts.phase9_train_eval --mode eval_pvb --pvb-checkpoint .../epoch24_step74921.ckpt --eval-seeds 20260810 20260811 20260812`.
+  - Tests: complete original `pcqm4mv2`, `ani1x`, and `pdbbind` valid/test traversal; no training and no `max_batches` truncation.
+  - Result: all original evaluation items were processed: valid `168929/285072/367`, test `168930/161913/167`; all three seeds completed. Artifact SHA256: `01f5cb806be59c7901e8ef3281726d082a82a802f86e9773689c1596ba616ab`.
+  - Commit: pending.
+
+- [x] T911 Evaluate PVB `off` and fused H-block on paired protein-only valid/test splits.
+
+  Evidence:
+  - Source files: `scripts/phase9_train_eval.py`, the exact materialized protein-only PDBBind views, the original PVB checkpoint, and the selected source-frozen fused checkpoint.
+  - Target files: `profiles/pvb_off_protein_valid_test.json`, `profiles/fused_epoch1_valid_test.json`, and `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/checkpoints/source_frozen_epoch1_best.ckpt`.
+  - Commands: `... --mode eval_pvb_protein ...` and `... --mode eval_fused --resume-checkpoint .../source_frozen_epoch1_best.ckpt --eval-seeds 20260810 20260811 20260812`.
+  - Tests: complete paired valid/test traversal, exact atom/batch counts, and three fixed seeds for both models.
+  - Result: PVB-off processed valid/test `367/167` records (`354/155` batches); fused processed the same `367/167` records (`354/155` batches). PVB-off artifact SHA256 `90ad2e50d4dd1352c1c533e0f620cb9aa898674040b8cb9883d7e1d558ffa02`; fused artifact SHA256 `5bd5de29862e7d0e68a421ea7e56e85e704f4dba643b80c4598f464aa3ced02`.
+  - Commit: pending.
+
+- [x] T912 Report batch-compatible and atom-weighted loss, KL, velocity, and drift metrics.
+
+  Evidence:
+  - Source files: `scripts/phase9_train_eval.py` metric aggregation.
+  - Target files: the three Phase 9 evaluation JSON artifacts and the metric tables in `PLAN.md`/`HANDOFF.md`.
+  - Commands: JSON aggregation over `aggregate.{loss,kl,rec_vel,rec_drf}.{batch_mean,atom_weighted_mean}`.
+  - Tests: every report has three seeds, mean/std, atom counts, batch counts, padded cost, and explicit oversized-singleton counts.
+  - Result: complete original-PVB and paired protein-only metrics are recorded; no evaluation was silently truncated.
+  - Commit: pending.
+
+- [x] T913 Verify every source-loaded parameter is bitwise unchanged after training.
+
+  Evidence:
+  - Source files: `scripts/phase9_train_eval.py`, `utils/fusion_training.py`, and source-key provenance manifest.
+  - Target files: `profiles/source_frozen_train_epoch1.json` and `checkpoints/source_frozen_epoch1_best.ckpt`.
+  - Commands: source checksum comparison before/after training and checkpoint payload audit.
+  - Tests: `218` source checksums equal before/after; checkpoint stores `218` before/after checksums with equality; optimizer ID set equals the exact `50`-tensor complement.
+  - Result: passed. No source checksum mismatch; source parameters are stop-gradient/frozen throughout the run.
+  - Commit: pending.
+
+- [x] T914 Update PLAN.md, TASKS.md, HANDOFF.md, and DECISIONS.md with results and benchmarks.
+
+  Evidence:
+  - Source files: Phase 9 runner, result artifacts, checkpoint hashes, and source worktree audits.
+  - Target files: all four live planning files plus `module/graph.py`, `scripts/phase9_train_eval.py`, and `tests/test_graph_empty_bonds.py`.
+  - Commands: `timeout 120 python -m unittest discover -s tests -v`; `git diff --check`; source `git status --porcelain=v1`; artifact SHA256 audit.
+  - Tests: 28 target tests passed; PVB and Anew source repositories remain clean; target dependency/source audit passed.
+  - Result: Phase 9 gate passed. The selected one-epoch fused checkpoint and all complete valid/test reports are recorded. Fused H-block is currently worse than PVB-off on the paired PDBBind view; this is reported as an experimental result, not hidden as a success claim.
+  - Commit: pending.
+
+Gate P9: PASSED — checkpoint provenance, source freeze, complete valid selection, and one-time complete test evaluation all passed.
