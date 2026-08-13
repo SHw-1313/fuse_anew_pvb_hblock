@@ -69,6 +69,7 @@ def build_dyvae_from_config(args):
     )
 
     pvb_checkpoint = getattr(args.model, "pvb_checkpoint", None)
+    pvb_checkpoint_role = getattr(args.model, "pvb_checkpoint_role", "pvb")
     anew_checkpoint = getattr(args.model, "anew_checkpoint", None)
     resume_checkpoint = getattr(args.model, "resume_checkpoint", None)
     legacy_checkpoint = getattr(args.model, "ckpt", None)
@@ -77,6 +78,10 @@ def build_dyvae_from_config(args):
             "model.ckpt is deprecated for fused training; use "
             "model.pvb_checkpoint, model.anew_checkpoint, or "
             "model.resume_checkpoint"
+        )
+    if pvb_checkpoint_role not in {"pvb", "pvb_full"}:
+        raise ValueError(
+            "model.pvb_checkpoint_role must be 'pvb' or 'pvb_full'"
         )
     min_coverage = float(getattr(args.model, "checkpoint_min_coverage", 0.95))
     model._resume_metadata = None
@@ -89,11 +94,14 @@ def build_dyvae_from_config(args):
         model._resume_metadata = metadata
     else:
         if pvb_checkpoint:
-            pvb_report = load_role_checkpoint(model, pvb_checkpoint, "pvb", min_coverage=min_coverage)
+            pvb_report = load_role_checkpoint(model, pvb_checkpoint, pvb_checkpoint_role, min_coverage=min_coverage)
             source_checkpoint_keys.update(pvb_report.matched_keys)
         if anew_checkpoint:
-            if fusion_mode != "anew_block":
-                raise ValueError("model.anew_checkpoint requires fusion.mode=anew_block")
+            if fusion_mode not in {"anew_block", "anew_block_pvb_posterior"}:
+                raise ValueError(
+                    "model.anew_checkpoint requires fusion.mode=anew_block "
+                    "or anew_block_pvb_posterior"
+                )
             anew_report = load_role_checkpoint(model, anew_checkpoint, "anew", min_coverage=min_coverage)
             source_checkpoint_keys.update(anew_report.matched_keys)
     model._source_checkpoint_keys = frozenset(source_checkpoint_keys)

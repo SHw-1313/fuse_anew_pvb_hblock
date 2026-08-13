@@ -10,7 +10,7 @@ from module import dyVAE
 from utils.checkpoint import CheckpointCoverageError, load_resume_checkpoint, load_role_checkpoint
 
 
-def _model(fusion_mode: str = "anew_block") -> dyVAE:
+def _model(fusion_mode: str = "anew_block", using_ode: bool = True) -> dyVAE:
     return dyVAE(
         hidden_dim=16,
         ffn_dim=32,
@@ -20,7 +20,7 @@ def _model(fusion_mode: str = "anew_block") -> dyVAE:
         cutoff_lower=0.0,
         cutoff_upper=10.0,
         k_neighbors=8,
-        using_ode=True,
+        using_ode=using_ode,
         fusion_mode=fusion_mode,
         anew_encoder_config={
             "hidden_size": 16,
@@ -49,6 +49,41 @@ class TestCheckpoints(unittest.TestCase):
         self.assertTrue(report.matched_keys)
         self.assertTrue(any(key.startswith("encoder.") for key in report.unexpected_keys))
         self.assertIn("block_projection.0.weight", target.state_dict())
+
+    def test_pvb_full_module_loads_encoder_posterior_decoder_and_heads(self):
+        source = _model("off", using_ode=False)
+        target = _model("anew_block", using_ode=False)
+        prefixes = (
+            "encoder.",
+            "W_vec_mu.",
+            "W_vec_log_var.",
+            "decoder.",
+            "vel_ffn.",
+            "drf_ffn.",
+        )
+        expected = {
+            key for key in target.state_dict() if key.startswith(prefixes)
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "pvb_full.ckpt"
+            torch.save(source, path)
+            report = load_role_checkpoint(target, path, "pvb_full")
+        self.assertEqual(report.coverage, 1.0)
+        self.assertEqual(set(report.matched_keys), expected)
+        self.assertFalse(report.missing_keys)
+        for prefix in prefixes:
+            self.assertTrue(any(key.startswith(prefix) for key in report.matched_keys))
+
+    def test_pvb_full_requires_posterior_coverage(self):
+        source = _model("off", using_ode=False)
+        state = dict(source.state_dict())
+        del state["W_vec_log_var.weight"]
+        target = _model("anew_block", using_ode=False)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "pvb_full_missing_posterior.ckpt"
+            torch.save({"state_dict": state}, path)
+            with self.assertRaises(CheckpointCoverageError):
+                load_role_checkpoint(target, path, "pvb_full")
 
     def test_anew_source_keys_are_translated(self):
         source = _model("anew_block")

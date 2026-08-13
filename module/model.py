@@ -64,9 +64,10 @@ class dyVAE(nn.Module):
         self.re_weight = re_weight
         self.using_ode = using_ode
         self.backbone = backbone
-        if fusion_mode not in {"off", "anew_block"}:
+        if fusion_mode not in {"off", "anew_block", "anew_block_pvb_posterior"}:
             raise ValueError(
-                f"Unsupported fusion_mode={fusion_mode!r}; expected 'off' or 'anew_block'"
+                f"Unsupported fusion_mode={fusion_mode!r}; expected 'off', "
+                "'anew_block', or 'anew_block_pvb_posterior'"
             )
         self.fusion_mode = fusion_mode
 
@@ -74,7 +75,7 @@ class dyVAE(nn.Module):
         self.block_projection = None
         self.block_gate = None
         self.anew_hidden_dim = None
-        if self.fusion_mode == "anew_block":
+        if self.fusion_mode in {"anew_block", "anew_block_pvb_posterior"}:
             from .anew_block_encoder import AnewBlockEncoder
 
             encoder_config = dict(anew_encoder_config or {})
@@ -142,12 +143,75 @@ class dyVAE(nn.Module):
         x_rep = x_mu + torch.exp(x_log_var / 2) * torch.randn_like(x)
         return x_rep, kl_loss
 
-    def _encode_anew_block(self, x, batch, mask):
-        """Encode explicit protein blocks while keeping the PVB source mean."""
+    def _encode_pvb_path(self, z, b, x, x_mu_ref, abid, mask, edge_mask, bond_index):
+        """Run the original PVB encoder/graph path used by ``off``."""
 
-        if self.fusion_mode != "anew_block" or self.anew_block_encoder is None:
-            raise RuntimeError("_encode_anew_block requires fusion_mode='anew_block'")
-        block_output = self.anew_block_encoder(
+        e_edge_index, e_edge_weight, e_edge_vec, e_bond_type = construct_edges(
+            Z=z,
+            X=x,
+            bid=abid,
+            mask=edge_mask,
+            bond_index=bond_index,
+            cutoff_lower=self.cutoff_lower,
+            cutoff_upper=self.cutoff_upper,
+            cutoff_H=self.cutoff_H,
+            k_neighbors=self.k_neighbors,
+        )
+        return self.encode(
+            z,
+            b,
+            x,
+            x_mu_ref,
+            abid,
+            e_edge_index,
+            e_edge_weight,
+            e_edge_vec,
+            e_bond_type,
+            mask,
+        )
+
+    def _pvb_encoder_diagnostics(self, z, b, x, abid, mask, edge_mask, bond_index):
+        """Return PVB encoder state and posterior variance without sampling."""
+
+        e_edge_index, e_edge_weight, e_edge_vec, e_bond_type = construct_edges(
+            Z=z,
+            X=x,
+            bid=abid,
+            mask=edge_mask,
+            bond_index=bond_index,
+            cutoff_lower=self.cutoff_lower,
+            cutoff_upper=self.cutoff_upper,
+            cutoff_H=self.cutoff_H,
+            k_neighbors=self.k_neighbors,
+        )
+        h, vec, _, _, _ = self.encoder(
+            z=z,
+            b=b,
+            pos=x,
+            batch=abid,
+            edge_index=e_edge_index,
+            edge_weight_t=e_edge_weight,
+            edge_vec_t=e_edge_vec,
+            bond_type=e_bond_type,
+        )
+        log_var = -torch.abs(self.W_vec_log_var(h))
+        denominator = mask.sum().clamp_min(1).to(dtype=x.dtype)
+        kl_loss = -0.5 * torch.sum(
+            1.0
+            + log_var[mask]
+            - math.log(self.coord_prior_var)
+            - torch.exp(log_var[mask]) / self.coord_prior_var
+        ) / denominator
+        return {
+            "H_pvb": h,
+            "log_var_pvb": log_var,
+            "kl_loss_pvb": kl_loss,
+        }
+
+    def _run_anew_block_encoder(self, x, batch):
+        if self.anew_block_encoder is None:
+            raise RuntimeError("Anew block encoder is not constructed for this mode")
+        return self.anew_block_encoder(
             x_atom=x,
             atom_type=batch["atype"],
             block_type=batch["block_type"],
@@ -157,6 +221,13 @@ class dyVAE(nn.Module):
             bond_index=batch.get("bond_index"),
             bond_type=batch.get("bond_type"),
         )
+
+    def _encode_anew_block(self, x, batch, mask):
+        """Legacy Phase 9 Anew-posterior path; keep its semantics unchanged."""
+
+        if self.fusion_mode != "anew_block" or self.anew_block_encoder is None:
+            raise RuntimeError("_encode_anew_block requires fusion_mode='anew_block'")
+        block_output = self._run_anew_block_encoder(x, batch)
 
         # Milestone-one coordinate contract: Anew coordinates are diagnostic;
         # the bridge source mean remains exactly the PVB input structure.
@@ -176,8 +247,17 @@ class dyVAE(nn.Module):
         x_rep = x_mu + torch.exp(atom_log_var / 2) * torch.randn_like(x)
         return x_rep, kl_loss, block_output
 
+    def _encode_anew_conditioning(self, x, batch):
+        """Return Anew diagnostics for H-block decoder conditioning only."""
+
+        if self.fusion_mode not in {"anew_block", "anew_block_pvb_posterior"}:
+            raise RuntimeError(
+                "_encode_anew_conditioning requires an Anew block fusion mode"
+            )
+        return self._run_anew_block_encoder(x, batch)
+
     def _project_block_condition(self, block_output):
-        if self.fusion_mode != "anew_block":
+        if self.fusion_mode not in {"anew_block", "anew_block_pvb_posterior"}:
             return None
         condition = self.block_projection(block_output["H_block"])
         condition = condition.index_select(0, block_output["atom_block_id"])
@@ -225,22 +305,21 @@ class dyVAE(nn.Module):
         N = x0.shape[0]
         # encode
         block_condition = None
-        if self.fusion_mode == "off":
-            # Preserve the original PVB encoder path for the baseline mode.
-            e_edge_index, e_edge_weight, e_edge_vec, e_bond_type = construct_edges(
-                Z=atype, X=x0, bid=abid, mask=edge_mask, bond_index=bond_index,
-                cutoff_lower=self.cutoff_lower,
-                cutoff_upper=self.cutoff_upper,
-                cutoff_H=self.cutoff_H,
-                k_neighbors=self.k_neighbors
+        if self.fusion_mode in {"off", "anew_block_pvb_posterior"}:
+            # Preserve the original PVB encoder path for both the baseline and
+            # the corrected posterior-preserving mode.
+            x_rep, kl_loss = self._encode_pvb_path(
+                atype, btype, x0, b0, abid, mask, edge_mask, bond_index
             )
-            x_rep, kl_loss = self.encode(
-                atype, btype, x0, b0, abid, e_edge_index, e_edge_weight,
-                e_edge_vec, e_bond_type, mask
-            )
+            if self.fusion_mode == "anew_block_pvb_posterior":
+                # Anew consumes the clean input and supplies decoder-only block
+                # conditioning; its posterior/coordinate outputs are ignored
+                # by the bridge objective.
+                block_output = self._encode_anew_conditioning(clean_x0, batch)
+                block_condition = self._project_block_condition(block_output)
         else:
-            # Anew consumes the clean input and supplies block conditioning;
-            # its X outputs never replace the PVB bridge coordinates.
+            # Legacy Phase 9 semantics: Anew supplies both the posterior and
+            # block conditioning. Keep this branch unchanged in meaning.
             x_rep, kl_loss, block_output = self._encode_anew_block(
                 clean_x0, batch, mask
             )
@@ -309,20 +388,24 @@ class dyVAE(nn.Module):
 
         # encode
         block_condition = None
-        if self.fusion_mode == "off":
-            # Preserve the original PVB encoder path for the baseline mode.
-            e_edge_index, e_edge_weight, e_edge_vec, bond_type = construct_edges(
-                Z=z, X=x, bid=abid, mask=edge_mask, bond_index=bond_index,
-                cutoff_lower=self.cutoff_lower,
-                cutoff_upper=self.cutoff_upper,
-                cutoff_H=self.cutoff_H,
-                k_neighbors=self.k_neighbors
+        if self.fusion_mode in {"off", "anew_block_pvb_posterior"}:
+            # Preserve the original PVB posterior sampling path for both the
+            # baseline and corrected mode.
+            x_rep, _ = self._encode_pvb_path(
+                z,
+                b,
+                x,
+                x,
+                abid,
+                torch.ones_like(z).bool(),
+                edge_mask,
+                bond_index,
             )
-            x_rep, _ = self.encode(
-                z, b, x, x, abid, e_edge_index, e_edge_weight, e_edge_vec,
-                bond_type, torch.ones_like(z).bool()
-            )
+            if self.fusion_mode == "anew_block_pvb_posterior":
+                block_output = self._encode_anew_conditioning(x, batch)
+                block_condition = self._project_block_condition(block_output)
         else:
+            # Legacy Phase 9 semantics use Anew's posterior here.
             x_rep, _, block_output = self._encode_anew_block(
                 x, batch, torch.ones_like(z).bool()
             )
@@ -372,7 +455,7 @@ class dyVAE(nn.Module):
         # given x0
         xt = x0.clone()
         block_condition = None
-        if self.fusion_mode == "anew_block":
+        if self.fusion_mode in {"anew_block", "anew_block_pvb_posterior"}:
             block_output = self.anew_block_encoder(
                 x_atom=x0,
                 atom_type=batch["atype"],

@@ -37,7 +37,7 @@ def configure_fusion_parameters(
     if stage not in {"STANDARD", "ADAPTER", "SOURCE_FROZEN", "A", "B", "C"}:
         raise ValueError("fusion training stage must be standard, adapter, source_frozen, A, B, or C")
 
-    if getattr(model, "fusion_mode", "off") != "anew_block" or stage == "STANDARD":
+    if getattr(model, "fusion_mode", "off") not in {"anew_block", "anew_block_pvb_posterior"} or stage == "STANDARD":
         for parameter in model.parameters():
             parameter.requires_grad = True
         return {"trainable": sum(p.requires_grad for p in model.parameters()), "total": sum(1 for _ in model.parameters())}

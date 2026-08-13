@@ -426,3 +426,164 @@ worse than PVB `off`: valid batch loss `1.064952` versus `0.273862`, and test
 batch loss `1.043927` versus `0.255278`. These reports are retained as the
 baseline experiment result; further improvement requires a new experiment and
 must not be described as achieved by this run.
+
+## D045 — Phase 9 degradation is KL-dominated; reconstruction improved
+
+Status: Accepted
+
+On paired protein-only valid, legacy fused H-block reduced `rec_vel`
+from `0.102848` to `0.064429` and `rec_drf` from
+`0.165448` to `0.125655`, but increased KL from
+`0.006958` to `1.093584`. Total-loss degradation is therefore
+dominated by KL rather than reconstruction.
+
+## D046 — Preserve the complete PVB posterior for x_rep and KL
+
+Status: Accepted
+
+The corrected Phase 10 mode runs the original PVB encoder and posterior heads
+to produce `x_rep` and `kl_loss`. Anew H-block output is
+decoder conditioning only and cannot replace the PVB posterior contract.
+T1004 implements this as a separate PVB path followed by Anew `H_block`
+projection/broadcast; corrected inference follows the same posterior contract.
+
+The T1001 read-only audit reproduced the loss formula with maximum aggregate
+error `1.24e-8`, measured a `157.18x` batch-mean KL ratio, and confirmed that
+the legacy Anew `Wx_log_var` tensors were loaded/frozen while PVB posterior
+keys were not loaded by the legacy role. The recorded KL-dominated diagnosis
+therefore agrees with the implementation and Phase 9 reports.
+
+## D047 — Preserve legacy Phase 9 behavior through an explicit mode
+
+Status: Accepted
+
+Existing `off` and `anew_block` semantics, checkpoints, and loaders
+remain reproducible. Phase 10 uses separately named
+`anew_block_pvb_posterior` semantics and never silently changes legacy
+behavior. T1003 added the explicit mode to construction and training/config
+glue; focused fusion and checkpoint tests passed while retaining the legacy
+mode default. T1006 additionally confirms that corrected `pvb_full` plus Anew
+coverage matches all `263` source state tensors bitwise and leaves only the
+five projector/gate tensors in the optimizer complement.
+
+## D048 — Add a full-PVB checkpoint role for the corrected path
+
+Status: Accepted
+
+The new `pvb_full` role loads all expected compatible PVB
+`encoder.*`, `W_vec_mu.*`, `W_vec_log_var.*`,
+`decoder.*`, `vel_ffn.*`, and `drf_ffn.*` keys with
+complete coverage reporting. The existing `pvb` role remains the
+Phase 9 scoped decoder/head load.
+
+T1002 evidence: the real Phase 9 PVB state dict loaded `195/195`
+expected keys with zero missing, unexpected, or shape-mismatched keys. The
+coverage report is stored under
+`/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/checkpoints/pvb_full_coverage.json`.
+
+## D049 — Gate-zero parity covers the complete stochastic objective
+
+Status: Accepted
+
+Corrected-mode gate-zero parity compares PVB posterior state, KL,
+velocity/drift/total losses, stochastic source samples, and decoder outputs,
+not only conditioned decoder features. T1005 passes these comparisons within
+`1e-6`, including the complete inference trajectory and the legacy loader
+coverage check.
+
+T1006 additionally confirms that the source-loaded checkpoint tensors match
+the constructed corrected model bitwise before freezing.
+
+## D050 — Anew Wx_log_var is diagnostic-only in Phase 10
+
+Status: Accepted
+
+Anew `Wx_log_var` and block-level variance statistics are logged for
+diagnosis but do not construct `x_rep`, contribute to PVB KL, or enter
+the Phase 10 loss graph. T1004 routing tests confirm that changing the Anew
+variance head leaves corrected loss unchanged and its gradients absent. T1007 also records Anew variance quantiles and diagnostic KL separately from the PVB
+posterior: Anew diagnostic KL is `1.018065`, while the PVB KL used by the
+corrected loss is `0.006921472` on the fixed real batch.
+
+## D051 — Isolate posterior mismatch with the current shape-matched Anew state
+
+Status: Accepted
+
+Phase 10 uses the existing shape-matched Anew `128`-hidden, two-layer
+state to isolate posterior correction from width migration. Rebuilding/loading
+the official `512`-hidden, six-layer encoder is deferred to Phase 11.
+
+## D052 — Valid reconstruction selects the checkpoint; test runs once
+
+Status: Accepted
+
+Phase 10 selects exactly one checkpoint using valid
+`rec_total=rec_vel+rec_drf` after complete epochs. Test remains held
+out until the checkpoint is locked and is evaluated once with fixed seeds
+`20260810`, `20260811`, and `20260812`.
+
+## D053 — Smoke entrypoints enumerate every explicit fusion mode
+
+Status: Accepted
+
+Phase 10 keeps `off` and `anew_block` defaults unchanged but requires smoke and
+CLI paths to name `anew_block_pvb_posterior` explicitly. A stale two-choice
+smoke parser is a compatibility defect, so it was fixed before the T1008 gate
+was accepted.
+
+## D054 — Lock the best corrected adapter before any test evaluation
+
+Status: Accepted
+
+Phase 10 completed four valid epochs and selected the epoch-3 checkpoint by
+valid rec_total only. The training session ended during the following epoch
+before validation; that interruption is recorded in the training report and
+does not authorize test-based selection. The checkpoint and lock manifest are
+immutable for the paired evaluation.
+
+## D055 — Use one exact paired evaluator for all three models
+
+Status: Accepted
+
+PVB off, the Phase 9 legacy mode, and the corrected Phase 10 mode must use the
+same materialized protein-only valid/test views, padded-cost batching, and
+seeds 20260810, 20260811, and 20260812. The paired evaluator loads each model
+after constructing its target architecture, asserts identical traversal
+counts, and evaluates test only after the valid-only lock.
+
+## D056 — Recover completed paired evaluation without rerunning test
+
+Status: Accepted
+
+The first Phase 10 paired evaluator completed all six model/split traversals
+and emitted their aggregate lines, then failed only while serializing
+tensor-valued resume metadata. The report is recovered from that immutable log
+with test rerun disabled. The evaluator is fixed to retain only JSON-safe
+metadata for future runs. The recovered report records aggregate mean/std,
+fixed seeds, exact paired counts, and the missing per-seed-detail limitation
+explicitly.
+
+## D057 — Corrected paired result supports a performance claim only under the paired protocol
+
+Status: Accepted
+
+On the locked valid-selected checkpoint and the one-time paired evaluation,
+anew_block_pvb_posterior preserves PVB KL and improves both reconstruction
+terms and total loss relative to off on the paired valid and test views.
+The Phase 9 legacy mode still has lower reconstruction but remains total-loss
+dominated by its Anew-derived KL. This is a paired aggregate result, not a
+claim about per-seed superiority; the recovered report lacks individual
+per-seed metric records because the original writer failed after all six
+traversals.
+
+## D058 — Official Anew alignment is a separate Phase 11 model
+
+Status: Accepted
+
+Phase 10 closes with the shape-matched Anew 128-hidden, two-layer encoder used
+to isolate the posterior-contract issue. The official Anew 512-hidden,
+64-head, six-layer, eight-radial-setting representation must be introduced
+under a separate Phase 11 mode with full shape/key coverage and its own parity
+and checkpoint gates. Partial official-weight loading, silent shape adaptation,
+Anew unfreezing, coordinate residuals, and new KL terms remain out of scope
+until that separate baseline is proven.

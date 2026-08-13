@@ -14,7 +14,7 @@ from utils.fusion_training import (
 )
 
 
-def _model(n_layers: int = 3) -> dyVAE:
+def _model(n_layers: int = 3, fusion_mode: str = "anew_block") -> dyVAE:
     return dyVAE(
         hidden_dim=16,
         ffn_dim=32,
@@ -25,7 +25,7 @@ def _model(n_layers: int = 3) -> dyVAE:
         cutoff_upper=10.0,
         k_neighbors=8,
         using_ode=True,
-        fusion_mode="anew_block",
+        fusion_mode=fusion_mode,
         anew_encoder_config={
             "hidden_size": 16,
             "ffn_size": 16,
@@ -109,6 +109,31 @@ class TestTrainingStages(unittest.TestCase):
             if name.startswith("anew_block_encoder.encoder.encoder.layer_2."):
                 self.assertTrue(parameter.requires_grad)
         self.assertFalse(model.anew_block_encoder.embedding.block_embedding.weight.requires_grad)
+
+    def test_corrected_source_frozen_exposes_only_new_adapter_tensors(self):
+        model = _model(fusion_mode="anew_block_pvb_posterior")
+        loaded = {
+            name
+            for name, _ in model.named_parameters()
+            if name != "block_gate" and not name.startswith("block_projection.")
+        }
+        configure_fusion_parameters(model, "source_frozen", source_keys=loaded)
+        trainable = {
+            name for name, parameter in model.named_parameters()
+            if parameter.requires_grad
+        }
+        self.assertEqual(
+            trainable,
+            {
+                "block_gate",
+                "block_projection.0.weight",
+                "block_projection.0.bias",
+                "block_projection.1.weight",
+                "block_projection.1.bias",
+            },
+        )
+        groups = fusion_parameter_groups(model, 1e-4, 1e-5, 2e-4)
+        self.assertEqual({group["name"] for group in groups}, {"projector_gate"})
 
     def test_gradient_diagnostics_are_finite(self):
         model = _model(n_layers=1).train()

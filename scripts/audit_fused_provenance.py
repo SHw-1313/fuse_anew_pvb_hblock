@@ -12,6 +12,7 @@ from typing import Any
 import torch
 
 from scripts.profile_training_paths import _load_roles, build_model
+from utils.checkpoint import _load_payload, _normalized_state_dict, _state_dict_from_payload
 from utils.fusion_training import configure_fusion_parameters, fusion_parameter_groups
 
 
@@ -65,13 +66,43 @@ def _report_json(report: Any) -> dict[str, Any]:
 
 
 def audit(args: argparse.Namespace) -> dict[str, Any]:
-    model = build_model()
-    reports = _load_roles(model, args.pvb_checkpoint, args.anew_checkpoint)
+    model = build_model(args.fusion_mode)
+    reports = _load_roles(
+        model,
+        args.pvb_checkpoint,
+        args.anew_checkpoint,
+        args.pvb_role,
+    )
     loaded_by_role = {
         role: set(report.matched_keys) for role, report in reports.items()
     }
     source_union = set().union(*loaded_by_role.values())
     model._source_checkpoint_keys = set(source_union)
+    target_state = model.state_dict()
+    source_checksum_mismatches = []
+    source_checksum_checked = 0
+    for role, report in reports.items():
+        source_state = _normalized_state_dict(
+            _state_dict_from_payload(_load_payload(report.path))
+        )
+        for target_key, source_key in report.source_keys.items():
+            source_checksum_checked += 1
+            target_hash = _tensor_sha256(target_state[target_key])
+            source_hash = _tensor_sha256(source_state[source_key])
+            if target_hash != source_hash:
+                source_checksum_mismatches.append(
+                    {
+                        "role": role,
+                        "target_key": target_key,
+                        "source_key": source_key,
+                        "target_sha256": target_hash,
+                        "source_sha256": source_hash,
+                    }
+                )
+    if source_checksum_mismatches:
+        raise AssertionError(
+            "source-loaded target tensors do not match checkpoint tensors bitwise"
+        )
     stage_counts = configure_fusion_parameters(
         model,
         stage="source_frozen",
@@ -155,6 +186,7 @@ def audit(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "model": {
             "fusion_mode": getattr(model, "fusion_mode", None),
+            "pvb_checkpoint_role": args.pvb_role,
             "stage": "source_frozen",
             "state_key_count": len(target_state),
             "parameter_tensor_count": len(parameters),
@@ -178,6 +210,15 @@ def audit(args: argparse.Namespace) -> dict[str, Any]:
                 sum(parameters[name].numel() for name in new_parameter_keys)
             ),
         },
+        "source_loaded_parameter_checksums": {
+            name: _tensor_sha256(target_state[name])
+            for name in sorted(loaded_parameter_keys)
+        },
+        "source_checksum_audit": {
+            "checked_state_tensors": source_checksum_checked,
+            "mismatches": source_checksum_mismatches,
+            "all_source_tensors_match_bitwise": not source_checksum_mismatches,
+        },
         "stage_counts": stage_counts,
         "frozen_parameter_keys": sorted(frozen_parameter_keys),
         "trainable_parameter_keys": sorted(trainable_parameter_keys),
@@ -186,6 +227,7 @@ def audit(args: argparse.Namespace) -> dict[str, Any]:
             "all_loaded_parameters_frozen": True,
             "all_non_source_parameters_trainable": True,
             "optimizer_equals_trainable_complement": True,
+            "all_source_tensors_match_bitwise": not source_checksum_mismatches,
         },
         "per_target_key": provenance,
     }
@@ -196,6 +238,12 @@ def main() -> None:
     parser.add_argument("--pvb-checkpoint", default=DEFAULT_PVB_CHECKPOINT)
     parser.add_argument("--anew-checkpoint", default=DEFAULT_ANEW_CHECKPOINT)
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--fusion-mode",
+        choices=("anew_block", "anew_block_pvb_posterior"),
+        default="anew_block",
+    )
+    parser.add_argument("--pvb-role", choices=("pvb", "pvb_full"), default="pvb")
     parser.add_argument("--pvb-lr", type=float, default=1.0e-4)
     parser.add_argument("--anew-lr", type=float, default=1.0e-5)
     parser.add_argument("--projector-lr", type=float, default=1.0e-4)

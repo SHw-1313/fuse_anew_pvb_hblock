@@ -93,11 +93,27 @@ def _normalized_state_dict(state_dict: Mapping[str, torch.Tensor]) -> Dict[str, 
     return normalized
 
 
+_PVB_SCOPED_PREFIXES = ("decoder.", "vel_ffn.", "drf_ffn.")
+_PVB_FULL_PREFIXES = (
+    "encoder.",
+    "W_vec_mu.",
+    "W_vec_log_var.",
+    "decoder.",
+    "vel_ffn.",
+    "drf_ffn.",
+)
+
+
 def _role_target_keys(model: nn.Module, role: str) -> set[str]:
     target_keys = set(model.state_dict().keys())
     if role == "pvb":
-        prefixes = ("decoder.", "vel_ffn.", "drf_ffn.")
-        return {key for key in target_keys if key.startswith(prefixes)}
+        return {
+            key for key in target_keys if key.startswith(_PVB_SCOPED_PREFIXES)
+        }
+    if role == "pvb_full":
+        return {
+            key for key in target_keys if key.startswith(_PVB_FULL_PREFIXES)
+        }
     if role == "anew":
         return {key for key in target_keys if key.startswith("anew_block_encoder.")}
     if role == "resume":
@@ -107,7 +123,7 @@ def _role_target_keys(model: nn.Module, role: str) -> set[str]:
 
 def _translate_key(source_key: str, role: str) -> Optional[str]:
     key = _strip_wrappers(source_key)
-    if role == "pvb":
+    if role in {"pvb", "pvb_full"}:
         return key
     if role == "resume":
         return key
@@ -170,10 +186,11 @@ def _load_role_payload(
         else 0.0
     )
     print(report.summary())
-    if report.coverage < min_coverage:
+    required_coverage = 1.0 if role == "pvb_full" else min_coverage
+    if report.coverage < required_coverage:
         raise CheckpointCoverageError(
             f"{role} checkpoint coverage {report.coverage:.2%} is below "
-            f"minimum {min_coverage:.2%}: {path}"
+            f"minimum {required_coverage:.2%}: {path}"
         )
     model.load_state_dict(translated, strict=False)
     return report
@@ -187,7 +204,7 @@ def load_role_checkpoint(
 ) -> CheckpointReport:
     """Load one explicitly scoped checkpoint role into an already-built model."""
 
-    if role not in {"pvb", "anew", "resume"}:
+    if role not in {"pvb", "pvb_full", "anew", "resume"}:
         raise ValueError(f"Unsupported checkpoint role: {role!r}")
     payload = _load_payload(path)
     return _load_role_payload(

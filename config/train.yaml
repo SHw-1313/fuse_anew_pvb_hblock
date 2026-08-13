@@ -34,6 +34,7 @@ model:
   ref: null                             # specify the reference model checkpoint, ONLY FOR adjoint matching
   ckpt: null                            # deprecated; use the explicit checkpoint roles below
   pvb_checkpoint: null                  # compatible PVB decoder/head state dictionary
+  pvb_checkpoint_role: pvb             # pvb preserves Phase 9; pvb_full includes encoder/posterior heads
   anew_checkpoint: null                 # compatible Anew embedding/EPT state dictionary
   resume_checkpoint: null                # complete fused model/training state
   checkpoint_min_coverage: 0.95          # fail loudly below this compatible-key coverage
@@ -57,7 +58,7 @@ model:
   using_ode: false                      # whether to use ODE to model the bridge, default: false
   backbone: torchmdnet                  # backbone module type, default: torchmdnet, DO NOT CHANGE
   fusion:
-    mode: off                           # off or anew_block
+    mode: off                           # off, anew_block, or anew_block_pvb_posterior
     stage: standard                     # standard, adapter, source_frozen, A, B, or C when fusion is enabled
     pvb_lr: 0.0001
     anew_lr: 0.00001

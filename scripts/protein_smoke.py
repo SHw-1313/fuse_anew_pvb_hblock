@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a tiny protein-only train and inference smoke for both fusion modes."""
+"""Run a tiny protein-only train and inference smoke for all fusion modes."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from scripts.profile_train_step import build_model, build_synthetic_batch
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--fusion-mode", choices=("off", "anew_block"), default="anew_block")
+    parser.add_argument("--fusion-mode", choices=("off", "anew_block", "anew_block_pvb_posterior"), default="anew_block")
     args = parser.parse_args()
     device = torch.device("cuda" if args.device == "auto" and torch.cuda.is_available() else args.device)
     torch.manual_seed(41)

@@ -1012,7 +1012,7 @@ Gate P8: timing evidence must be stable and operator-level before performance ch
   - Target files: `profiles/pvb_off_protein_valid_test.json`, `profiles/fused_epoch1_valid_test.json`, and `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/checkpoints/source_frozen_epoch1_best.ckpt`.
   - Commands: `... --mode eval_pvb_protein ...` and `... --mode eval_fused --resume-checkpoint .../source_frozen_epoch1_best.ckpt --eval-seeds 20260810 20260811 20260812`.
   - Tests: complete paired valid/test traversal, exact atom/batch counts, and three fixed seeds for both models.
-  - Result: PVB-off processed valid/test `367/167` records (`354/155` batches); fused processed the same `367/167` records (`354/155` batches). PVB-off artifact SHA256 `90ad2e50d4dd1352c1c533e0f620cb9aa898674040b8cb9883d7e1d558ffa02`; fused artifact SHA256 `5bd5de29862e7d0e68a421ea7e56e85e704f4dba643b80c4598f464aa3ced02`.
+  - Result: PVB-off processed valid/test `367/167` records (`354/155` batches); fused processed the same `367/167` records (`354/155` batches). PVB-off artifact SHA256 `90ad2e50d4dd1352c1c533e0f620cb9aa898674040b8cb9883d7e1d558ffa02d`; fused artifact SHA256 `5bd5de29862e7d0e68a421ea7e56e85e704f4dba643b80c4598f464aa3ced02a`.
   - Commit: pending.
 
 - [x] T912 Report batch-compatible and atom-weighted loss, KL, velocity, and drift metrics.
@@ -1046,3 +1046,172 @@ Gate P8: timing evidence must be stable and operator-level before performance ch
   - Commit: pending.
 
 Gate P9: PASSED — checkpoint provenance, source freeze, complete valid selection, and one-time complete test evaluation all passed.
+
+## Phase 10 — PVB-posterior-preserving H-block conditioning
+
+- [x] T1000 Initialize Phase 10 documentation and provenance.
+  Status: DONE
+
+  Evidence:
+  - Source files: `/workspace/PVB`, `/workspace/AnewOmni`, and target Git history.
+  - Target files: `PLAN.md`, `TASKS.md`, `HANDOFF.md`, `DECISIONS.md`.
+  - Commands: `enter-container`; `conda activate torch-ito`; target/source status and SHA audit; complete four-document read.
+  - Tests: document initialization consistency; Phase 9 artifact preservation.
+  - Result: Passed; target commit/source SHAs and clean source worktrees were recorded, all four documents were read completely, only the four live documents changed, and Phase 9 hashes were unchanged. Phase 10 directory was absent before work.
+  - Commit: pending.
+
+- [x] T1001 Reproduce and audit the Phase 9 loss decomposition.
+  Status: DONE
+
+  Evidence:
+  - Source files: `module/interpolant_matcher.py`, `module/model.py`, `utils/checkpoint.py`, `scripts/phase9_train_eval.py`, `scripts/audit_phase9_loss.py`, and Phase 9 reports/manifests.
+  - Target files: `scripts/audit_phase9_loss.py`, `PLAN.md`, `DECISIONS.md`, and `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/profiles/phase9_loss_audit.json`.
+  - Commands: `python -m py_compile scripts/audit_phase9_loss.py`; `python -m scripts.audit_phase9_loss --output /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/profiles/phase9_loss_audit.json`; `sha256sum` on the artifact.
+  - Tests: formula recomputation, posterior source assertions, legacy role coverage audit, source-frozen manifest audit, and source revision capture.
+  - Result: Passed. Maximum aggregate formula error is `1.24e-8`; batch-mean legacy/PVB KL ratio is `157.18x`, atom-weighted ratio is `157.97x`; legacy `rec_total` is lower by `0.078212` batch-mean while total loss is higher by `0.791090`. Anew `Wx_log_var` is loaded/frozen in the legacy path; PVB encoder/posterior keys are not loaded by the legacy PVB role and remain in its inactive complement. Artifact SHA256: `6ef70eed26b5cb4c3144047f657c4d664a77f67b715b07f3bf9a407b984a6273`.
+  - Commit: pending.
+
+- [x] T1002 Add a backward-compatible full-PVB checkpoint role.
+  Status: DONE
+
+  Evidence:
+  - Source files: PVB `module/model.py` state-dict layout; `utils/checkpoint.py`; current fused model construction; and existing checkpoint tests.
+  - Target files: `utils/checkpoint.py`, `scripts/profile_training_paths.py`, `train.py`, `config/train.yaml`, `tests/test_checkpoints.py`, `scripts/audit_pvb_full_checkpoint.py`, and `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/checkpoints/pvb_full_coverage.json`.
+  - Commands: `python -m py_compile utils/checkpoint.py tests/test_checkpoints.py scripts/profile_training_paths.py train.py`; `python -m unittest -v tests.test_checkpoints`; `python -m scripts.audit_pvb_full_checkpoint --output /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/checkpoints/pvb_full_coverage.json`; `sha256sum` on the coverage artifact; real checkpoint load and `train.build_dyvae_from_config` role smoke.
+  - Tests: 7 checkpoint tests passed; real Phase 9 PVB checkpoint loaded with `pvb_full` coverage `195/195` (encoder 42, posterior 3, decoder 138, velocity 6, drift 6); no missing, unexpected, or shape-mismatched keys; Anew role remained `68/68`; the builder recorded 263 source-loaded keys and all PVB posterior keys.
+  - Result: Passed. The existing `pvb` role remains decoder/output-head scoped and backward-compatible. `pvb_full` always requires 100% expected-key coverage, reports matched/missing/unexpected/shape-mismatched keys, and loads the complete PVB encoder, posterior heads, decoder, and output heads after constructing the fused model. Coverage artifact SHA256: `1b5210793836f7ccc69f38de41a18cab855285673279992c51af85c90b0ff976`.
+  - Commit: pending.
+
+- [x] T1003 Add an explicit corrected fusion mode.
+  Status: DONE
+
+  Evidence:
+  - Source files: existing `off` and `anew_block` paths.
+  - Target files: `module/model.py`, `config/train.yaml`, training/inference entrypoints, and tests.
+  - Commands: `python -m py_compile module/model.py train.py scripts/profile_training_paths.py tests/test_fusion.py`; mode construction and configuration smoke.
+  - Tests: `python -m unittest -v tests.test_fusion tests.test_checkpoints` (11 tests passed), including corrected-mode construction and legacy namespace/checkpoint fixtures.
+  - Result: Passed. `anew_block_pvb_posterior` is accepted and constructs the Anew encoder/projector with a zero gate; `off` and legacy `anew_block` defaults are unchanged, and existing legacy checkpoint tests remain green.
+  - Commit: pending.
+
+- [x] T1004 Implement PVB posterior plus Anew H-block conditioning.
+  Status: DONE
+
+  Evidence:
+  - Source files: PVB encoder/bridge and Anew `AnewBlockEncoder`.
+  - Target files: `module/model.py`, `utils/fusion_training.py`, and `tests/test_fusion.py`.
+  - Commands: corrected `_train`, `inference`, and `realization` route smoke; `python -m py_compile module/model.py utils/fusion_training.py tests/test_fusion.py`.
+  - Tests: `python -m unittest -v tests.test_fusion` (5 tests passed); corrected inference/realization finite; mutating Anew `Wx_log_var` leaves corrected loss unchanged and its gradients absent.
+  - Result: Passed. Corrected training/inference use the original PVB encoder/posterior and attach only projected/broadcast Anew `H_block` to the decoder; Anew `X_atom`, `X_block`, and `log_var_block` are retained as diagnostics, and `Wx_log_var` is disconnected from the loss. Fusion stages recognize the corrected mode.
+  - Commit: pending.
+
+- [x] T1005 Add complete gate-zero parity tests.
+  Status: DONE
+
+  Evidence:
+  - Source files: PVB `off` and corrected fusion paths.
+  - Target files: `tests/test_fusion.py` and parity fixtures.
+  - Commands: `python -m py_compile tests/test_fusion.py`; `python -m unittest -v tests.test_fusion`; identical weights/inputs and Torch/NumPy seeds `20260810`–`20260812`.
+  - Tests: posterior `x_rep`, KL, velocity, drift, total loss, inference source sample, decoder output, zero condition, and legacy `anew_block` reload.
+  - Result: Passed. Six fusion tests passed; corrected gate-zero matches `off` within `1e-6` for PVB posterior sample/KL, both reconstruction terms, total loss, inference trajectory, decoder inputs/outputs, and zero condition. Legacy load remains `150/150` PVB plus `68/68` Anew.
+  - Commit: pending.
+
+- [x] T1006 Audit source freezing and optimizer membership.
+  Status: DONE
+
+  Evidence:
+  - Source files: `utils/checkpoint.py`, `utils/fusion_training.py`, and PVB/Anew role reports.
+  - Target files: `scripts/audit_fused_provenance.py`, `tests/test_training_stages.py`, and `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/checkpoints/source_frozen_provenance.json`.
+  - Commands: `python -m py_compile scripts/audit_fused_provenance.py tests/test_training_stages.py`; `python -m unittest -v tests.test_training_stages`; `python -m scripts.audit_fused_provenance --fusion-mode anew_block_pvb_posterior --pvb-role pvb_full ...`; `sha256sum` on the Phase 10 provenance artifact.
+  - Tests: corrected-mode unit test; real `pvb_full`/Anew coverage, source-to-target bitwise checksums, exact source-frozen complement, optimizer IDs, and trainable/effective-gradient tensor list.
+  - Result: Passed. `pvb_full=195/195`, Anew `68/68`; 263 source state tensors/262 source parameter tensors match checkpoint bytes; source-frozen leaves exactly five trainable projector/gate tensors (`33,281` parameters), one optimizer group, and no PVB encoder/posterior in the complement. Artifact SHA256: `c99aa39be4c39aa8592e79630ed4b9c33e913e8b4c427b1797c321535badf6ce`.
+  - Commit: pending.
+
+- [x] T1007 Add posterior and conditioning diagnostics.
+  Status: DONE
+
+  Evidence:
+  - Source files: PVB encoder/posterior path, Anew `Wx_log_var` output, and Phase 9 metric/checkpoint utilities.
+  - Target files: `module/model.py`, `utils/phase10_diagnostics.py`, `scripts/phase10_diagnostics.py`, `tests/test_phase10_diagnostics.py`, and `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/profiles/phase10_diagnostics_record0.json`.
+  - Commands: `python -m unittest -v tests.test_phase10_diagnostics`; corrected real-batch diagnostic with `pvb_full`, Phase 9 Anew checkpoint, record 0, and `--no-update`.
+  - Tests: two diagnostic unit tests passed; real corrected batch produced finite PVB/Anew variance quantiles, KL, reconstruction, gate/condition, and gradient reports; Anew `Wx_log_var` gradient was absent.
+  - Result: Passed. PVB log-var mean/std `-0.790057/0.026386`, PVB KL `0.006921472`; Anew block log-var mean/std `-2.074082/0.270299`, diagnostic KL `1.018065`; corrected loss `0.314263`, `rec_total=0.308613`, gate/condition norms zero at initialization, projector/gate gradient norm `6.44585e-4`, and Anew variance was diagnostic-only. Artifact SHA256: `6b2032350ca03d3839bd31e6b1001e04b2b7741db96d75b432b537c6f83641ea`.
+  - Commit: pending.
+
+- [x] T1008 Run focused tests and smoke tests.
+  Status: DONE
+
+  Evidence:
+  - Source files: target tests, `scripts/protein_smoke.py`, `train.py`, and `infer_prot.py`.
+  - Target files: `scripts/protein_smoke.py`, T1008 logs under `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/profiles/`, and the four live documents.
+  - Commands: `python -m unittest discover -s tests -v`; `python -m compileall -q .`; `python train.py --help`; `python infer_prot.py --help`; `CUDA_VISIBLE_DEVICES=5 python -m scripts.protein_smoke --device cuda --fusion-mode {off,anew_block,anew_block_pvb_posterior}`; source status audit.
+  - Tests: 36 unit tests passed; compile and both CLI help commands passed; all three smoke paths returned finite train/inference results and inference shape `[16, 3]`; PVB and Anew source worktrees were clean.
+  - Result: Passed after a minimal compatibility fix: the first corrected-mode smoke exposed that `protein_smoke.py` still allowed only the two legacy choices; its parser was extended without changing defaults. Smoke losses were `off=12.922840`, `anew_block=4.031592`, and `anew_block_pvb_posterior=29.173777`. Unit-test log SHA256 `a894bb52be44fd3c2e352db3d68158851709869bee1314035d45b86569c5d204`; train-help SHA256 `0ec56796a2d9ea77710ed55dce98e8359ae7c576a2c127d3568c51d8a74597a7`; infer-help SHA256 `f7832bbab3d41ba2c9759a2f1b45cc6760bbdaee9c2b412b448ba3e14dced837`.
+  - Commit: pending.
+
+- [x] T1009 Run a fixed-real-batch overfit/checksum gate.
+  Status: DONE
+
+  Evidence:
+  - Source files: exact-length protein-only materialized data, `scripts/source_frozen_overfit.py`, Phase 9 runner utilities, and corrected source-freezing helpers.
+  - Target files: `scripts/source_frozen_overfit.py` and `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/profiles/source_frozen_overfit_corrected.json`.
+  - Commands: corrected fixed batch with `pvb_full`, current shape-matched Anew role, 20 steps, projector/gate LR `1e-3`, and `CUDA_VISIBLE_DEVICES=5`.
+  - Tests: finite loss/gradients; exact source checksum and optimizer complement; nonzero gate gradient; projector gradient after step 0; decreasing `rec_total`; PVB-like KL; no dropped/truncated atoms; Anew variance absent from the gradient graph.
+  - Result: Passed. Record 0 has `2147` atoms, `282` blocks, `4368` bonds, and exact dataset/raw/view atom counts. `rec_total` decreased `0.308612682 → 0.307434760` over 20 steps; PVB KL stayed near `0.007063`. `pvb_full=195/195` and Anew `68/68`; five trainable adapter tensors (`33,281` parameters) form the exact optimizer complement; gate gradients occur at steps `0–19`, projector gradients after the initial update at steps `1–19`; source checksum mismatches `0`; no Anew `Wx_log_var` gradient. Artifact SHA256: `ed51fda34ea1ec81aa4ee8642bfe9051892cc41b6f31408727145aebb7acb4e2`.
+  - Commit: pending.
+
+- [x] T1010 Train the corrected adapter.
+  Status: DONE
+
+  Evidence:
+  - Source files: `scripts/phase9_train_eval.py`, `scripts/phase10_train_eval.py`, `data/protein_view.py`, and the exact Phase 9 materialized protein-only views.
+  - Target files: `scripts/phase10_train_eval.py`, `scripts/phase10_training_report.py`, `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/train_corrected.log`, and `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/profiles/phase10_train_interrupted.json`.
+  - Commands: `CUDA_VISIBLE_DEVICES=5 python -m scripts.phase10_train_eval ... --epochs 5 --min-epochs 3 --patience 2 --projector-lr 1e-3 --grad-clip 1.0`; `python -m scripts.phase10_training_report ...`.
+  - Tests: complete train traversal `6413/6413` in each of four completed epochs (`6200/6200/6200/6200` steps; `14,660,149` atoms per epoch), valid traversal `367/367` (`354` batches, `847,978` atoms, `239` oversized singleton batches), source checksums, frozen-source optimizer membership, and no test use.
+  - Result: Passed the minimum three-epoch protocol with four complete validation epochs. Valid batch-mean `rec_total` was `0.222021`, `0.221780`, `0.222065`, `0.221543`; best epoch `3`, global step `24797`, with PVB-like batch KL `0.006957666`. The long-running session stopped during the next training epoch before validation; this is recorded explicitly and does not invalidate the already-selected valid checkpoint. Source checksums remained unchanged. Training report SHA256: `7cd906217a6446d9e9bdc18917f2731323f2431f77538d81fc5b6bd1e10b9dc6`.
+  - Commit: pending.
+
+- [x] T1011 Lock the best checkpoint using valid only.
+  Status: DONE
+
+  Evidence:
+  - Source files: `scripts/phase10_lock_checkpoint.py`, Phase 10 best checkpoint payload, and the complete validation reports.
+  - Target files: `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/checkpoints/anew_block_pvb_posterior_best.ckpt` and `phase10_best.lock.json`.
+  - Commands: `python -m scripts.phase10_lock_checkpoint --checkpoint .../anew_block_pvb_posterior_best.ckpt --output .../phase10_best.lock.json ...`.
+  - Tests: valid-only metric consistency, `pvb_full=195/195`, Anew `68/68`, source checksum before/after equality, no test payload, and immutable checkpoint SHA.
+  - Result: Passed. Locked epoch `3`, global step `24797`, valid batch-mean `rec_total=0.2215431160951233`; checkpoint SHA256 `5ad3b769b602037da2dd47889592a53ed6ff4f66cf4fde162aeae3a180e4d204`; lock SHA256 `b9d574ad81c637e000610142f9d4a4150b4451157b8f00dcbf451e6b81444e09`. `test_evaluated=false` before T1012.
+  - Commit: pending.
+
+- [x] T1012 Run the one-time paired evaluation.
+  Status: DONE
+
+  Evidence:
+  - Source files: scripts/phase9_train_eval.py, scripts/phase10_paired_eval.py, scripts/recover_phase10_paired_eval.py, PVB off, Phase 9 legacy fused checkpoint, and the locked Phase 10 checkpoint.
+  - Target files: /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/profiles/phase10_paired_valid_test.json, phase10_paired_eval.log, and phase10_paired_recovery.log.
+  - Commands: CUDA_VISIBLE_DEVICES=5 python -m scripts.phase10_paired_eval --device cuda:0 ... --eval-seeds 20260810 20260811 20260812; then recovery from the completed evaluator log without rerunning any split.
+  - Tests: all six traversals completed; valid 367/367 records, 354 batches, 847978 atoms, 239 oversized singleton batches; test 167/167 records, 155 batches, 334142 atoms, 70 oversized singleton batches; identical counts for all three models.
+  - Result: Passed with an honest recovery. The evaluator completed PVB off, Phase 9 legacy, and Phase 10 corrected on valid then test, but its final JSON writer failed on tensor-valued resume metadata after all six aggregate lines were emitted. The recovery report did not rerun evaluation. Valid batch means (loss/KL/rec_vel/rec_drf/rec_total) were PVB off (0.273862/0.006958/0.102848/0.165448/0.268296), legacy (1.064952/1.093584/0.064430/0.125655/0.190084), corrected (0.264250/0.006958/0.099335/0.159349/0.258684). Test batch means were PVB off (0.255278/0.007027/0.098625/0.151031/0.249657), legacy (1.043928/1.089811/0.060861/0.111218/0.172079), corrected (0.246216/0.007027/0.095238/0.145356/0.240595). Atom-weighted metrics are preserved in the report. Report SHA256: 9653534757efc8323db1538fcdd1993c9c36f16c95a58559b912ee1252006c52; evaluation log SHA256: 2ee28bd2638631304c53ebb57caf6cc57a20e41d2d074f7f2a82aba1ad316af5. The corrected KL remains PVB-like; reconstruction and total loss improve over PVB off, while legacy remains KL-dominated. Per-seed detail was not reconstituted after the writer failure; aggregate mean/std and fixed seeds are recorded explicitly.
+  - Commit: pending.
+
+- [x] T1013 Run final audits.
+  Status: DONE
+
+  Evidence:
+  - Source files: target/source Git state, Phase 9/10 manifests, locked checkpoint, paired evaluation report, and runtime dependency scan.
+  - Target files: `scripts/audit_phase10_final.py` and `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/profiles/phase10_final_audit.json`.
+  - Commands: `python -m unittest discover -s tests -v`; `python -m compileall -q .`; `python train.py --help`; `python infer_prot.py --help`; `python -m scripts.audit_phase10_final --output /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/profiles/phase10_final_audit.json`; `git diff --check`; source status and artifact hash audits.
+  - Tests: 36 target tests passed; compile and both CLI help commands passed; final audit passed; PVB/Anew source worktrees are clean; protected Phase 9 hashes match; Phase 10 checkpoint/report coverage is complete; no runtime sibling-repository dependency was found.
+  - Result: Passed. Phase 9 artifacts are unchanged, including checkpoint SHA256 `c9df6928268c4a5f27779067b83703af1a15d92f187f570bb454baa2441d57` and valid/test report SHAs `90ad2e50d4dd1352c1c533e0f620cb9aa898674040b8cb9883d7e1d558ffa02d` and `5bd5de29862e7d0e68a421ea7e56e85e704f4dba643b80c4598f464aa3ced02a`. Final audit SHA256: `e48d25108041f0948d7cbb94acd5dada53694d3b0d3da46269aeb2541fdfd050`. The current shape-matched Anew 128/2-layer limitation and aggregate-only paired-report recovery limitation remain explicit.
+  - Commit: pending.
+
+- [x] T1014 Close Phase 10 documentation.
+  Status: DONE
+
+  Evidence:
+  - Source files: Phase 10 audit/report/checkpoint manifests, paired valid/test report, current target changes, and the official Anew provenance audit.
+  - Target files: PLAN.md, TASKS.md, HANDOFF.md, DECISIONS.md, and /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/profiles/phase10_final_audit.json.
+  - Commands: final live-document review; git diff --check; python -m unittest discover -s tests -v; python -m scripts.audit_phase10_final --output /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/profiles/phase10_final_audit.json; post-close timeout 900 python -m unittest discover -s tests -v.
+  - Tests: 36 target tests passed after the documentation close; post-close unit-log SHA256 is 7818b71442c27fd36433b1014dd94b94ed5fa8273c59378cefd1673fc43aa7af; final audit and git diff --check passed; all Phase 10 checkpoint/report coverage and paired-count checks passed; PVB/Anew source worktrees are clean; no task remains IN_PROGRESS; protected Phase 9 artifacts remain unchanged.
+  - Result: Passed. Gate P10 is closed. The corrected mode preserves the PVB posterior, passes complete gate-zero parity and source-freezing gates, decreases fixed-batch reconstruction, and improves paired aggregate valid/test reconstruction and total loss over PVB off while keeping KL PVB-like. The aggregate-only per-seed reporting limitation is retained explicitly. Phase 11 official-Anew alignment is proposed only and is not implemented.
+  - Commit: pending.
+
+Gate P10: PASSED — pvb_full coverage, corrected posterior contract, complete stochastic parity, diagnostic-only Anew variance, exact source freeze/optimizer membership, fixed-batch overfit, valid-only lock, paired evaluation, final audit, legacy reproducibility, and Phase 9 immutability all have evidence.

@@ -41,12 +41,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--pvb-checkpoint", required=True)
     parser.add_argument("--anew-checkpoint", required=True)
+    parser.add_argument("--pvb-role", choices=("pvb", "pvb_full"), default="pvb")
+    parser.add_argument(
+        "--fusion-mode",
+        choices=("anew_block", "anew_block_pvb_posterior"),
+        default="anew_block",
+    )
     parser.add_argument("--warmup-steps", type=int, default=1)
     parser.add_argument("--steps", type=int, default=1)
     return parser
 
 
-def build_model() -> dyVAE:
+def build_model(fusion_mode: str = "anew_block") -> dyVAE:
     return dyVAE(
         256,
         512,
@@ -64,7 +70,7 @@ def build_model() -> dyVAE:
         re_weight=1.0,
         using_ode=False,
         backbone="torchmdnet",
-        fusion_mode="anew_block",
+        fusion_mode=fusion_mode,
         anew_encoder_config={
             "hidden_size": 128,
             "ffn_size": 128,
@@ -82,14 +88,17 @@ def build_model() -> dyVAE:
 
 
 def _load_roles(
-    model: dyVAE, pvb_checkpoint: str, anew_checkpoint: str
+    model: dyVAE,
+    pvb_checkpoint: str,
+    anew_checkpoint: str,
+    pvb_role: str = "pvb",
 ) -> Dict[str, CheckpointReport]:
     # The loader prints a full mismatch report by design.  The profiler emits
     # machine-readable JSON, so retain the reports while keeping stdout clean.
     with contextlib.redirect_stdout(io.StringIO()):
-        pvb = load_role_checkpoint(model, pvb_checkpoint, "pvb", min_coverage=1.0)
+        pvb = load_role_checkpoint(model, pvb_checkpoint, pvb_role, min_coverage=1.0)
         anew = load_role_checkpoint(model, anew_checkpoint, "anew", min_coverage=1.0)
-    return {"pvb": pvb, "anew": anew}
+    return {pvb_role: pvb, "anew": anew}
 
 
 def _move_batch(batch: dict, device: torch.device) -> dict:
@@ -189,7 +198,10 @@ def run(args: argparse.Namespace) -> dict:
     batch = _move_batch(collate_fn([[item]]), device)
     reports = {}
     for role, report in _load_roles(
-        build_model(), args.pvb_checkpoint, args.anew_checkpoint
+        build_model(args.fusion_mode),
+        args.pvb_checkpoint,
+        args.anew_checkpoint,
+        args.pvb_role,
     ).items():
         reports[role] = {
             "coverage": report.coverage,
@@ -213,8 +225,8 @@ def run(args: argparse.Namespace) -> dict:
     }
     for mode in ("all_trainable", "adapter", "source_frozen", "forward_only"):
         torch.manual_seed(1000)
-        model = build_model()
-        role_reports = _load_roles(model, args.pvb_checkpoint, args.anew_checkpoint)
+        model = build_model(args.fusion_mode)
+        role_reports = _load_roles(model, args.pvb_checkpoint, args.anew_checkpoint, args.pvb_role)
         source_keys = set().union(
             *(report.matched_keys for report in role_reports.values())
         )
