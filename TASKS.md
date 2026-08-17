@@ -1215,3 +1215,456 @@ Gate P9: PASSED — checkpoint provenance, source freeze, complete valid selecti
   - Commit: pending.
 
 Gate P10: PASSED — pvb_full coverage, corrected posterior contract, complete stochastic parity, diagnostic-only Anew variance, exact source freeze/optimizer membership, fixed-batch overfit, valid-only lock, paired evaluation, final audit, legacy reproducibility, and Phase 9 immutability all have evidence.
+
+## Phase 11 — lightweight shared-PVB H-block fusion
+
+Only one Phase 11 task may be `IN_PROGRESS`. Phase 9 and Phase 10 tasks remain
+complete and must not be renumbered.
+
+- [x] T1100 Create and audit the Phase 11 branch and provenance record.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: completed Phase 10 commit `fbf8302d57942dbc41a52e0e1019ecb8c0287687`, PVB `c08e5e3cd49d45c6d748387e78224843bd356f50`, and AnewOmni `926e99818ea18cf9d9b2064ce0319fe691b7a1f1`.
+  - Target files: verified branch `phase11/pvb-shared-hblock`, `PLAN.md`, `TASKS.md`, `DECISIONS.md`, and `HANDOFF.md`; Phase 11 output root reserved at `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/`.
+  - Commands: `git status --short --branch`; `git rev-parse HEAD`; `git log -1`; `git branch -a/-vv`; `git remote -v`; source status audits; SHA256 audits for protected Phase 9/10 artifacts; complete four-document read.
+  - Tests: target was clean before the Phase 11 append; branch exists at the Phase 10 final commit; PVB/Anew are clean; only T1100 was initially `IN_PROGRESS`; decision headings are collision-free after the mechanical D053–D066 to D059–D072 renumbering.
+  - Result: Passed. Phase 11 branch `phase11/pvb-shared-hblock` and `main` both point to Phase 10 final commit `fbf8302d57942dbc41a52e0e1019ecb8c0287687`; remote is `origin` at `https://github.com/SHw-1313/fuse_anew_pvb_hblock.git`. Protected Phase 9 hashes remain checkpoint `c9df6928268c4c8a5f27779067b83703af1a15d92f187f570bb454baa2441d57`, PVB report `90ad2e50d4dd1352c1c533e0f620cb9aa898674040b8cb9883d7e1d558ffa02d`, and fused report `5bd5de29862e7d0e68a421ea7e56e85e704f4dba643b80c4598f464aa3ced02a`. Phase 10 hashes are corrected checkpoint `5ad3b769b602037da2dd47889592a53ed6ff4f66cf4fde162aeae3a180e4d204`, lock `b9d574ad81c637e000610142f9d4a4150b4451157b8f00dcbf451e6b81444e09`, paired report `9653534757efc8323db1538fcdd1993c9c36f16c95a58559b912ee1252006c52`, and final audit `e48d25108041f0948d7cbb94acd5dada53694d3b0d3da46269aeb2541fdfd050`. No Phase 9/10 artifact was modified.
+  - Commit: pending.
+
+- [x] T1101 Audit PVB shared representations, block semantics, and cost budget.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: `/workspace/PVB/module/model.py`, `/workspace/PVB/module/torchmd_et.py`, `/workspace/PVB/utils/bio_utils.py`, target equivalents, `data/block_metadata.py`, `data/protein_view.py`, `data/subgraph.py`, and vendored Anew `third_party/anewomni/models/modules/EPT/ept.py`/`GET/tools.py`.
+  - Target files: `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/profiles/t1101_audit.json`, `t1101_real_batch_profile.json`, `t1101_profile_off.json`, `t1101_profile_legacy.json`, and `t1101_profile_corrected.json`; `PLAN.md`, `TASKS.md`, `HANDOFF.md`, and `DECISIONS.md`.
+  - Commands: source/call-site audits with `grep -nE`; `python -m scripts.profile_real_batches --dataset-root /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/data --dataset pdbind_protein_only --splits train_block valid_block test_block --max-records 100 --budgets 4000000 8000000 16000000`; one-real-record `scripts.profile_training_paths.py` runs for `anew_block` and `anew_block_pvb_posterior`; inline PVB `off` profiler; artifact SHA256 and source-worktree checks.
+  - Tests: PVB full-role coverage `195/195`; shape-matched Anew role coverage `68/68`; source-frozen checksum preservation true for both profiled fusion paths; 100 sampled train records used explicit metadata with zero legacy fallbacks and zero mixed-edge-mask blocks; finite one-real-batch profiles completed.
+  - Result: Passed. PVB `TorchMD_VQ_ET.forward()` produces scalar `h_atom`, but the current `dyVAE.encode()` consumes it only through `W_vec_log_var` and does not return it. PVB `btype` contains 118 element blocks followed by 20 residue blocks; Anew mapping accepts only residue IDs 118–137 and rejects molecular/element IDs. Anew EPT constructs dense atom-level `[B, N, N]` attention tensors, while PVB uses sparse edge-list attention. On the 2147-atom/282-block/4368-bond real item, forward-only timings were PVB `off` 149.38 ms, Phase 9 legacy Anew 102.72 ms, and Phase 10 corrected dual encoder 282.05 ms; the corrected path includes both PVB encoder and Anew EPT. Phase 11A must expose/reuse PVB `h_atom`, pool it, and not call Anew EPT. Timing is diagnostic, not a final benchmark.
+  - Commit: pending.
+
+- [x] T1102 Add the backward-compatible `pvb_shared_hblock` mode and expose the shared scalar atom state.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: PVB `module/model.py` and `module/torchmd_et.py`; target `module/model.py`, `config/train.yaml`, `scripts/profile_train_step.py`, and existing checkpoint loader.
+  - Target files: `module/model.py`, `config/train.yaml`, `scripts/profile_train_step.py`, `tests/test_phase11_shared.py`.
+  - Commands: `python -m unittest -v tests.test_phase11_shared tests.test_fusion tests.test_training_stages`; `python -m py_compile module/model.py scripts/profile_train_step.py train.py tests/test_phase11_shared.py`; real `pvb_full` role load against `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/checkpoints/pvb_state_dict.pt`.
+  - Tests: 17 focused fusion/stage/shared-mode tests passed; `pvb_shared_hblock` loaded PVB full role with coverage `195/195`, zero missing/unexpected/shape-mismatched keys; default `encode()` retained its two-value contract; optional state returned `h_atom`, `vec_atom`, and `log_var_pvb`; old fusion tests passed.
+  - Result: Passed. `pvb_shared_hblock` is accepted as a distinct mode, constructs no Anew encoder/EPT, follows the PVB posterior path, and preserves old modes/checkpoint keys. No pooling or decoder condition is active yet; those are T1103/T1104.
+  - Commit: pending.
+
+- [x] T1103 Implement variance-preserving block pooling and the bottleneck adapter.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: vendored Anew `std_conserve_scatter_mean`; existing explicit block metadata.
+  - Target files: `module/shared_hblock.py`, `module/model.py`, `utils/fusion_training.py`, and `tests/test_phase11_shared.py`.
+  - Commands: `python -m unittest -v tests.test_phase11_shared tests.test_training_stages`; `python -m py_compile module/model.py module/shared_hblock.py utils/fusion_training.py tests/test_phase11_shared.py`; hidden-256/rank-32 parameter-count probe.
+  - Tests: 14 focused shared/stage tests passed; exact `sum/sqrt(N)` pooling parity; atom broadcast; detached source feature; adapter-only optimizer membership; old fusion/stage tests remain green.
+  - Result: Passed. `pvb_shared_hblock` uses the vendored Anew variance-preserving helper, a LayerNorm→Linear(32)→SiLU→Linear bottleneck, and a zero-initialized `shared_hblock_gate`. The final adapter projection uses ordinary initialization so the gate retains a first-step gradient. The branch has 7 parameter tensors / 17,185 parameters at hidden size 256, constructs no Anew EPT, and is not yet injected into the decoder.
+  - Commit: pending.
+
+- [x] T1104 Inject the H-block condition once after PVB decoder cross-branch merging.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: PVB `module/torchmd_et.py` cross-attention decoder structure.
+  - Target files: `module/torchmd_et.py`, `module/model.py`, and `tests/test_phase11_shared.py`.
+  - Commands: `python -m py_compile module/model.py module/torchmd_et.py module/shared_hblock.py tests/test_phase11_shared.py`; `python -m unittest -v tests.test_phase11_shared`; `python -m unittest -v tests.test_fusion tests.test_training_stages`; `GIT_PAGER=cat git diff --check`.
+  - Tests: Phase 11 focused suite passed 10/10; legacy fusion/staged-training regression passed 14/14; zero-gate full-objective and inference parity, single post-merge injection, finite gradients, and SE(3) tests passed.
+  - Result: Passed. `post_cross_condition` is injected once after the decoder `x0`/`xt` merge and before equivariant layers. Existing `block_condition` semantics remain unchanged; training, inference, and realization use the new path only for `pvb_shared_hblock`.
+  - Commit: pending.
+
+- [x] T1105 Extend checkpoint roles, freezing, and optimizer audits for the shared mode.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: `utils/checkpoint.py`, `utils/fusion_training.py`, and Phase 10 role-loader utilities.
+  - Target files: `scripts/audit_phase11_shared_provenance.py`, `tests/test_checkpoints.py`, and `tests/test_training_stages.py`.
+  - Commands: `python -m py_compile scripts/audit_phase11_shared_provenance.py tests/test_checkpoints.py tests/test_training_stages.py`; `python -m unittest -v tests.test_checkpoints tests.test_training_stages`; `python -u -m scripts.audit_phase11_shared_provenance --output /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/checkpoints/t1105_shared_provenance.json`; `sha256sum /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/checkpoints/t1105_shared_provenance.json`.
+  - Tests: 17/17 checkpoint/stage tests passed; real `pvb_full` coverage `195/195`, no missing/unexpected/shape mismatches; all 195 source parameter tensors matched bitwise and remained unchanged; exact 7-tensor / 17,185-parameter shared complement formed one `projector_gate` group.
+  - Result: Passed. `pvb_shared_hblock` constructs no Anew encoder, PVB encoder/posterior/decoder/output parameters are source-loaded and frozen, and only the new shared adapter/gate parameters are optimized. Provenance artifact SHA256: `a7209f4e51176e2daa90e55ebeb3404ebf0868b587209a3ba95b9044b0a6269a`.
+  - Commit: pending.
+
+- [x] T1106 Add full-objective parity and compatibility tests.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: Phase 10 parity fixtures, RNG controls, `utils/checkpoint.py`, and protected Phase 9/10 checkpoint artifacts.
+  - Target files: `tests/test_phase11_shared.py`.
+  - Commands: `python -m py_compile tests/test_phase11_shared.py`; `python -m unittest -v tests.test_phase11_shared`.
+  - Tests: 12/12 passed. Gate-zero shared versus PVB `off` matched `h_atom`, `vec_atom`, `log_var_pvb`, `x_rep`, KL, full training objective, inference source sample, and decoder output exactly; Phase 9 legacy and Phase 10 corrected checkpoint paths loaded with complete coverage.
+  - Result: Passed. The full stochastic-objective parity gate and historical checkpoint compatibility gate are closed; no training may proceed from an unproven parity result.
+  - Commit: pending.
+
+- [x] T1107 Profile and overfit the Phase 11A protein-only shared H-block.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: `data/protein_view.py`, `scripts/profile_training_paths.py`, and `scripts/source_frozen_overfit.py`.
+  - Target files: `scripts/profile_training_paths.py`, `scripts/source_frozen_overfit.py`, and JSON reports under `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/shared_hblock_protein/`.
+  - Commands: `python -m py_compile scripts/profile_training_paths.py scripts/source_frozen_overfit.py tests/test_phase11_shared.py`; `python -m unittest discover -s tests -v`; identical exact-record profile commands for `off`, Phase 10 corrected, and `pvb_shared_hblock`; 20-step shared `source_frozen_overfit` command; `sha256sum` on all four reports.
+  - Tests: full target suite passed 50/50. Shared profile used 2147 atoms / 282 blocks / 4368 bonds; forward-only was 79.029 ms and source-frozen step 117.069 ms at 9.527 GiB, versus Phase 10 corrected 85.729 ms / 138.208 ms at 9.531 GiB. The fixed batch had 20/20 finite steps, exact optimizer membership, source checksums unchanged, nonzero gate gradient from step 0, projector gradient after step 1, and no Anew encoder construction.
+  - Result: Passed. `rec_total` decreased from `0.308612704` to `0.308233753`; no item was dropped or truncated. The measured cost is diagnostic for the exact record and is not a full-split performance claim.
+  - Commit: pending.
+
+- [x] T1108 Train and evaluate the Phase 11A protein-only pilot.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: Phase 9 exact-length protein-only splits and batching/evaluation helpers; Phase 10 validation-selection protocol; protected Phase 9/10 checkpoints.
+  - Target files: `scripts/phase11_shared_train_eval.py`, `scripts/phase11_paired_eval.py`, `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/shared_hblock_protein/t1108_train.json`, `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/shared_hblock_protein/t1108_paired_valid_test.json`, and the locked adapter checkpoint/manifest.
+  - Commands: formal 5-epoch train/valid command recorded above; `CUDA_VISIBLE_DEVICES=4 python -u -m scripts.phase11_paired_eval --output /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/shared_hblock_protein/t1108_paired_valid_test.json --fused-data-root /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/data/pdbind_protein_only --pvb-checkpoint /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/checkpoints/pvb_state_dict.pt --legacy-checkpoint /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase9/checkpoints/source_frozen_epoch1_best.ckpt --phase10-checkpoint /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase10/checkpoints/anew_block_pvb_posterior_best.ckpt --phase11-checkpoint /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/checkpoints/pvb_shared_hblock_best.ckpt --lock /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/checkpoints/phase11_shared_hblock_best.lock.json --device cuda:0 --eval-seeds 20260810 20260811 20260812 --batch-budget 4000000 --max-atoms-per-batch 4096 --max-items-per-batch 8 --splits valid test`.
+  - Tests: formal train/valid traversed all 6,413 train items / 14,666,461 atoms and 367 valid items / 847,978 atoms; locked paired evaluation completed exactly once for all four models, both splits, and all three seeds. Every paired view matched: valid 354 batches / 847,978 atoms, test 155 batches / 334,142 atoms. Load coverage was PVB `195/195`, Phase 9 legacy `268/268`, Phase 10 `268/268`, Phase 11 PVB `195/195` plus adapter `7/7`; source worktrees and protected Phase 9/10 checkpoint hashes remained unchanged.
+  - Result: Phase 11 shared batch-mean metrics (loss / KL / rec_vel / rec_drf / rec_total) were valid `0.260572391 / 0.006957666 / 0.097893420 / 0.157112839 / 0.255006258` and test `0.242662904 / 0.007027225 / 0.093872097 / 0.143169028 / 0.237041126`. Atom-weighted metrics were valid `0.251991546 / 0.006926987 / 0.095785901 / 0.150664055 / 0.246449956` and test `0.240526811 / 0.006980063 / 0.093844615 / 0.141098147 / 0.234942761`. Compared with PVB off, shared reduced batch-mean `rec_total` by `0.013289851` valid and `0.012615575` test while preserving PVB KL; compared with Phase 10 corrected, it reduced `rec_total` by `0.003677607` valid and `0.003553392` test. Legacy still has KL `1.093585077` valid / `1.089811224` test and is not a fair total-loss improvement. The paired report SHA256 is `ae078b126a3919936bc3a5b99c7f5cbaa7fa85d16b29012b9d6ca84f79064d1f`; adapter checkpoint SHA256 is `fecb7371033bb2dc5f82d865890f182fb41991c43104b3b302533d0f8dcab08f`; lock SHA256 remains `131138fa13701543d17c71ba2153ffd062ce798c8149f9ced7dbc61c95821178`; `test_evaluated=true` is recorded in the paired report and the locked checkpoint was not changed.
+  - Commit: pending.
+
+Gate P11A: `PASSED`. Implementation correctness, full-objective parity, source
+preservation, fixed-batch learning, lightweight execution, complete paired
+valid/test traversal, legacy reproducibility, and no Phase 9/10 artifact
+replacement are evidenced above. Phase 11B T1109–T1116 may proceed.
+
+- [x] T1109 Audit and extract the exact official Anew block-embedding table.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: official Anew checkpoint; `/workspace/AnewOmni/models/modules/nn.py`; `/workspace/AnewOmni/models/IterVAE/model_edge.py`; `data/bioparse/vocab.py`, `const.py`, tokenizer implementation and tokenizer vocabulary asset at Anew commit `926e99818ea18cf9d9b2064ce0319fe691b7a1f1`.
+  - Target files: `scripts/audit_official_anew_block_embedding.py`, `tests/test_phase11_official_embedding.py`, `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/checkpoints/anew_official_block_embedding.pt`, and `t1109_official_block_embedding_provenance.json`.
+  - Commands: `python -m py_compile scripts/audit_official_anew_block_embedding.py tests/test_phase11_official_embedding.py`; `python -u -m scripts.audit_official_anew_block_embedding --embedding-output /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/checkpoints/anew_official_block_embedding.pt --output /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/checkpoints/t1109_official_block_embedding_provenance.json`; the same command with `--verify-only --output /tmp/t1109_official_block_embedding_verify.json`; `python -m unittest -v tests.test_phase11_official_embedding`.
+  - Tests: official full state key `base_model.autoencoder.embedding.block_embedding.weight`, derived state key `embedding.block_embedding.weight`, and extracted key matched exactly; shape `437 x 512`, dtype `torch.float32`, full/derived/extracted tensor SHA256 `2ba7c22abf1ca550d354d282e7c4ed2278ab972789ce223bf50db31abb69ddf`; vocabulary order SHA256 `b7e157f2f6cb62e673301430333fa4b6988573f68237dfb8b31fe806b4f133a1`; reproducibility verification passed and focused test passed 1/1.
+  - Result: Passed. The official checkpoint SHA256 is `961599acb617b8baf742755b4416322979507c9814ebd1a1e8582cff9c0a74c1`; derived encoder state SHA256 is `34bed276af64e9759c38278f1aa1f7157212da1dad55dc5ce6500ef6b8d29d25`; extracted artifact SHA256 is `ad31c380a2c6ab8cca24457948bdd8979829569150044c4022de3a938246f26c`; provenance JSON SHA256 is `2e2525fd578389072219d51fdf2698ab1de1d9f49e81bb14dcbd1502d55810ee`. The complete 437-entry vocabulary and 119-entry atom vocabulary are recorded. Official semantic embedding reuse is provenance-approved; tokenizer data and model integration remain separate tasks.
+  - Commit: pending.
+
+
+- [x] T1110 Vendor the minimal Anew tokenizer and vocabulary assets.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: pinned Anew tokenizer/vocabulary, helpers, and asset at commit `926e99818ea18cf9d9b2064ce0319fe691b7a1f1`.
+  - Target files: `third_party/anewomni/data/bioparse/`, `third_party/anewomni/utils/`, `scripts/audit_anew_vendor.py`, and `tests/test_anew_vendor_tokenizer.py`.
+  - Commands: vendor copy with import-only namespace adaptations; `python -u -m scripts.audit_anew_vendor --output /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/checkpoints/t1110_anew_vendor_provenance.json`.
+  - Tests: source/target vocabulary and tokenization parity on four representative SMILES; focused tests passed 3/3; no sibling runtime import.
+  - Result: Passed. 13 mapped files compare byte-identically after import normalization; vocabulary is 437 blocks/119 atoms; tokenizer is size 300, kekulized, cycle-priority. Report SHA256 `ad1ec26af7eb4282b4c31d060d3adeba5873de8ab67d51e6df29093e6e40ecc4`.
+  - Commit: pending.
+
+- [ ] T1111 Materialize and validate Anew semantic fragment metadata.
+
+  Status: `BLOCKED`
+
+  Evidence:
+  - Source files: raw molecule/ligand chemical identity with bond orders; Anew tokenizer/vocabulary.
+  - Target files: separate Phase 11 semantic datasets and manifests; original mmap data untouched.
+  - Commands: `python -m py_compile scripts/audit_phase11_semantic_data.py`; full CPU audit `python -u -m scripts.audit_phase11_semantic_data --output /output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase11/checkpoints/t1111_semantic_data_audit.json`.
+  - Tests: full train/valid/test traversal covered 6,413/367/167 records, 219,314 ligand atoms, and 232,741 ligand bonds; PVB/SDF heavy-atom order was exact for all 6,947 records; local atom assignment was exact for tokenizer successes and explicit atom fallback records; original mmap/SDF inputs were read-only.
+  - Result: BLOCKED. Five train SDF bonds have `UNSPECIFIED` order, so they cannot be mapped faithfully to Anew's bond vocabulary without guessing. The Anew tokenizer also required explicit atom-level fallback for 508/6,947 records (15,772/219,314 atoms; 7.31%/7.19%) due upstream mapping assertions. The audit report status is `blocked`, `all_checks_passed=false`, and its SHA256 is `62ee4655760f887a7d66bc096cda5c0277ef18cc70606e09d8cdf9b9ab3c1031`; no semantic dataset or model branch was created.
+  - Commit: pending.
+  - Latest prerequisite probe (2026-08-14): the corrected Phase 12 audit used
+    valid SDF chemistry directly and ligand-only damaged-record probes; none of
+    the five unspecified-bond cases yielded a usable graph, and the 508
+    tokenizer fallback records remain unresolved. T1112–T1117 therefore remain
+    blocked and were not started.
+  - Phase 11A schematic and conclusion report: `reports/phase11/p9_p10_p11a_architecture.md`.
+  - Report SHA256: `7d8ab3cefcdb3820ce0b70c192ed64063ed19cb4cc97c1a3207b4b9e324fabd8`.
+
+- [ ] T1112 Add the optional frozen Anew semantic block branch.
+
+  Status: `TODO`
+
+  Expected evidence:
+  - Source files: extracted official block table and Phase 11A shared adapter.
+  - Target files: frozen semantic lookup, low-rank projection, and zero-initialized semantic gate.
+  - Commands: parameter/source-key/gradient audit.
+  - Tests: semantic gate zero reproduces Phase 11A; official table is frozen and bitwise unchanged; only projection/gates train; no redundant Anew atom embedding or EPT.
+  - Result: pending.
+  - Commit: pending.
+
+- [ ] T1113 Add fragment-vocabulary, fallback, and mixed-batch tests.
+
+  Status: `TODO`
+
+  Expected evidence:
+  - Source files: Phase 11 semantic data/model contracts.
+  - Target files: tokenizer, collation, mixed protein/ligand, and semantic-gate tests.
+  - Commands: focused and complete target test suites.
+  - Tests: repeated fragments, atom fallbacks, unknown handling, mixed samples, block offsets, batch isolation, deterministic tokenization, and gate-zero parity.
+  - Result: pending.
+  - Commit: pending.
+
+- [ ] T1114 Run Phase 11B real-complex smoke, overfit, and performance comparisons.
+
+  Status: `TODO`
+
+  Expected evidence:
+  - Source files: validated semantic complex view and existing profilers.
+  - Target files: Phase 11B JSON reports.
+  - Commands: matched real batches with semantic gate off/on and Phase 10 reference.
+  - Tests: finite gradients, exact source checksums, reconstruction decrease, semantic projection/gate gradients, fragment coverage, parameter/time/memory overhead.
+  - Result: pending.
+  - Commit: pending.
+
+- [ ] T1115 Train, select, and lock the Phase 11B semantic pilot.
+
+  Status: `TODO`
+
+  Expected evidence:
+  - Source files: validated Phase 11B train/valid views.
+  - Target files: selected checkpoint, last checkpoint, training history, and provenance manifest.
+  - Commands: early-stopped train/valid-only selection using rec-total; no test tuning.
+  - Tests: complete requested traversal, finite metrics, source preservation, exact optimizer membership, gate/condition norms.
+  - Result: pending.
+  - Commit: pending.
+
+- [ ] T1116 Run the locked comparison and final repository audits.
+
+  Status: `TODO`
+
+  Expected evidence:
+  - Source files: locked Phase 10, Phase 11A, and Phase 11B checkpoints plus PVB baseline.
+  - Target files: complete paired valid/test metrics, performance table, changed-file and artifact-hash audit.
+  - Commands: three fixed seeds, complete test suite, `git diff --check`, source worktree status, artifact SHA256.
+  - Tests: no truncated test evaluation; no Phase 9/10 artifact change; all legacy modes load; exact changed-file list.
+  - Result: pending.
+  - Commit: pending.
+
+- [ ] T1117 Close Phase 11 documentation and handoff.
+
+  Status: `TODO`
+
+  Expected evidence:
+  - Source files: all Phase 11 reports, checkpoints, hashes, tests, and audits.
+  - Target files: `PLAN.md`, `TASKS.md`, `DECISIONS.md`, and `HANDOFF.md`.
+  - Commands: final documentation consistency and numbering check.
+  - Tests: exactly zero `IN_PROGRESS` tasks when complete; all claims tied to artifacts; next action explicit.
+  - Result: pending.
+  - Commit: pending.
+
+
+Phase 11B is intentionally deferred by user decision. T1111 and T1112-T1117
+remain unresolved/deferred because the Anew fragment tokenizer does not return
+complete semantic block metadata for the affected population. No Phase 11B
+implementation, training, or evaluation is authorized while Phase 13 runs.
+Gate P11: Phase 11 is complete only after correctness and provenance gates pass.
+Performance or quality improvement may be claimed only if locked paired metrics
+support it. Gate P11A is passed, but semantic Phase 11B remains blocked at T1111;
+
+## Phase 12 — Source chemistry recovery and PVB dataset materialization
+
+- [ ] T1200 Coordinate the two independent Phase 12 data workstreams.
+
+  Status: `TODO`
+
+  Execution note: the PDB mirror/materialization lane continues as a
+  background task, but it is not the current active task. It must not consume
+  the sole `IN_PROGRESS` slot or be used by Phase 13.
+
+  Evidence:
+  - Source files: `/data4/PVB/pcqm4mv2`, `/data4/PVB/ani1x`, `/data4/PVB/pdbbind`, wwPDB `rsyncPDB.sh`, and `/data4/PVB/pdb/ept_release` scripts.
+  - Target files: `PLAN.md`, `TASKS.md`, `DECISIONS.md`, `HANDOFF.md`, and separate Phase 12 data/provenance outputs.
+  - Commands: launch the two lanes concurrently; run bounded xyz2mol probes; start the official 36-prefix resumable PDB mirror; compile/test the deterministic manifest helper.
+  - Tests: corrected T1201 ligand-only chemistry audit updated; EPT/PVB one-record contract check passed; Phase 11 tests continue to use existing protein-only views.
+  - Result: the original T1201 PDBBind timing was superseded after its ligand-only input boundary was not proven; the corrected T1201 chemistry audit is now complete. T1202 remains an active mirror/materialization lane. Only T1200 is `IN_PROGRESS`.
+  - Commit: pending.
+
+- [x] T1201 Audit original chemistry sources and benchmark `xyz2mol`.
+
+  Status: `DONE`
+
+  Execution note: This lane ran in parallel under T1200; it was not marked separately `IN_PROGRESS` to preserve the single-active-task invariant.
+  The initial DONE scope was superseded by the ligand-only correction; the
+  corrected report and method comparison are now finalized.
+
+  Evidence:
+  - Source files: `/data4/PVB/pcqm4mv2`, `/data4/PVB/ani1x`, `/data4/PVB/pdbbind`, and official xyz2mol source commit `9ec591dd01bb4793fc221c526d5f7a19c05d0aca`.
+  - Target files: `reports/phase12/t1201_chemistry_xyz2mol_audit.md` and the Phase 12 sections of the four live documents.
+  - Commands: bounded PCQM 50-record probe; ANI 100-group probe; corrected PDBBind ligand-only 20-record probe with isolated 3-second timeouts; five damaged ligand-only probes; RDKit rdDetermineBonds comparison; projected unique-group runtime calculations.
+  - Tests: source-format inventory, SDF direct-use rule, ligand-only atom-count audit, bond-order/aromaticity availability, fallback-cause classification, no raw-source mutation.
+  - Result: complete PCQM/PDBBind SDF chemistry must bypass inference; ANI has no explicit bond-order/aromaticity arrays and remains a separate unique-group task; the five damaged PDBBind ligand-only probes returned no usable xyz2mol graph. The historical PDBBind timing is superseded and no full reconstruction was launched.
+  - Commit: pending.
+
+  Follow-up evidence:
+  - Source files: five ligand-only PDBBind SDFs and Anew tokenizer mapping code.
+  - Target files: isolated five-SDF candidates and Phase 12 chemistry audit.
+  - Commands: xyz2mol/RDKit/Open Babel five-record repair probes; all-508 RDKit/Open Babel graph-preservation probe; candidate reload/tokenizer checks; SHA256.
+  - Tests: five `0 -> SINGLE` candidates preserve atom/order/known edges and pass tokenizer only with `sanitize=False`; no candidate passes normal RDKit sanitization; 508 fallback split and source identity confirmed.
+  - Result: candidates are retained for review only; the five are not promoted, and the 508 are complete-chemistry PDBBind tokenizer mapping failures rather than missing-bond records.
+  - Artifacts: `five_single_repair_summary.json` SHA256 `97fb45e5fab0b5e4fe7ebcf02b71d16892f4886edd321a28a845f324710c869d`; `fallback_method_probe.json` SHA256 `483c027676c9739a5cb5da6b7e9db02973fb3b6b586163c0735c0ab3e7bb1b51`.
+  - Commit: pending.
+
+- [ ] T1202 Download PDBs and produce full then half PVB datasets.
+
+  Status: `TODO`
+
+  Execution note: This lane is launched in parallel under T1200; it is not marked separately `IN_PROGRESS` to preserve the single-active-task invariant.
+
+  Expected evidence:
+  - Source files: official `https://files.wwpdb.org/pub/pdb/software/rsyncPDB.sh` and existing `/data4/PVB/pdb/ept_release` selection/split scripts.
+  - Target files: `/data4/PVB/pdb/`, `reports/phase12/t1202_pdb_materialization.md`, full data under `/data4/PVB/pdb/ept_release`, and half data under `/data4/users/sihao/data`.
+  - Commands: official template download/hash; initial read-only rsync dry run; bounded prefix dry run; resumable 36-lane official rsync mirror without transport compression; one-file EPT and PVB parser checks.
+  - Tests: the prefix dry run covered 361 files/84,505,477 bytes; EPT parsing produced one 162-residue chain; PVB parsing produced one 1,285-atom/2,614-edge record with the NumPy compatibility shim. Full counts/split hashes remain pending.
+  - Result: mirror in progress after resumable restart; latest sample is 24,019 files/about 5.02 GB. Partial files are preserved, no `--delete` is used, and Phase 11 inputs remain isolated.
+  - Commit: pending.
+
+Gate P12: do not begin semantic model integration from T1112 while T1111
+remains blocked. Complete SDF records bypass reconstruction; damaged-SDF repair
+must satisfy the measured four-hour ligand-only feasibility gate, and PDB
+before they can be used by later training or evaluation.
+
+## Phase 13 — H-block information, capacity, and injection ablations
+
+Phase 13 four-control PVB-matched tranche is complete. T1304/T1305 remain
+explicit unrun extension comparisons for a separately registered phase; no
+Phase 13 task is currently `IN_PROGRESS`.
+
+- [x] T1300 Freeze the ablation protocol and provenance.
+
+  Status: `DONE`
+
+  Execution note: Phase 11B is explicitly deferred. Phase 13 is active on the
+  existing protein-only Phase 9/10/11A views while T1202 continues in the
+  background.
+
+  Evidence:
+  - Source files: Phase 9/10/11A reports, locked checkpoints, model/configuration code, and exact protein-only manifests.
+  - Target files: `reports/phase13/t1300_protocol.md` and `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase13/provenance/`.
+  - Commands: source/target SHA and status capture; checkpoint/artifact SHA256; manifest identity audit.
+  - Tests: no protected artifact overwrite; Phase 10 and 11A metrics and trainable counts reproduce from existing reports.
+  - Result: protocol frozen in `reports/phase13/t1300_protocol.md`; Phase 13 uses the existing protein-only views, four PVB controls, seeds `20260810/11/12`, valid `rec_total` selection, and no Phase 11B/PDB dependency. Focused ablation/parity tests passed 7/7; the four variants have 195/195 PVB source coverage and 17,185 trainable adapter/gate parameters.
+  - Commit: working tree evidence; no commit requested.
+
+- [x] T1301 Add a common backward-compatible ablation interface and variant registry.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: current fusion configuration, `module/model.py`, Phase 10/11A adapter code, and Phase 9/10/11 runners.
+  - Target files: `utils/phase13_ablation.py`, `module/shared_hblock.py`, `scripts/profile_training_paths.py`, `scripts/phase11_shared_train_eval.py`, `scripts/phase13_paired_eval.py`, and `tests/test_phase13_ablations.py`.
+  - Commands: `python -m py_compile utils/phase13_ablation.py module/shared_hblock.py scripts/profile_training_paths.py scripts/phase11_shared_train_eval.py scripts/phase13_paired_eval.py`; registry probe.
+  - Tests: `python -m unittest -v tests.test_phase13_ablations tests.test_phase11_shared` — 18/18 passed, including legacy/Phase 10 loading and gate-zero parity.
+  - Result: public names map explicitly to `real`, `shuffled`, `constant`, and `atom_no_pool`; existing modes remain unchanged.
+  - Commit: working tree evidence; no commit requested.
+
+- [x] T1302 Implement matched real, sample-local shuffled, and constant H-block controls.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: current variance-preserving pooling and block metadata utilities.
+  - Target files: minimal control implementation plus deterministic shuffle/capacity tests.
+  - Commands: deterministic multi-sample control probe and variant registry construction.
+  - Tests: shuffled/constant probes pass; sample boundaries, shapes, norms, and parameter counts are preserved in `tests/test_phase13_ablations.py`.
+  - Result: real, sample-local shuffled, and fixed constant controls share the same adapter/gate capacity and explicit injection path.
+  - Commit: working tree evidence; no commit requested.
+
+- [x] T1303 Implement the PVB atom-feature no-pooling control.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: Phase 11A detached PVB `h_atom` path and adapter implementation.
+  - Target files: minimal no-pooling control and shape/batch-isolation tests.
+  - Commands: fixed-batch atom-no-pool forward probe and focused gradient tests.
+  - Tests: atom-no-pool returns one condition per atom, preserves the PVB posterior/source freeze, and has the same trainable adapter count.
+  - Result: the pooling contribution control is explicit and ready for matched training.
+  - Commit: working tree evidence; no commit requested.
+
+- [ ] T1304 Implement the feature-source-matched Anew-versus-PVB comparison.
+
+  Status: `TODO`
+
+  Expected evidence:
+  - Source files: Phase 10 Anew H-block encoder, Phase 11A PVB H-block path, and rank-32 post-merge adapter.
+  - Target files: `anew_rank32_postmerge` glue and matched-comparison tests.
+  - Commands: parameter inventory, source checksum, fixed-batch shape/norm and gradient probes.
+  - Tests: identical adapter rank, injection location, optimizer protocol, PVB posterior, and selection rule.
+  - Result: feature-source alignment is separated from adapter capacity and injection placement.
+  - Commit: pending.
+
+- [ ] T1305 Implement the matched injection-location comparison.
+
+  Status: `TODO`
+
+  Expected evidence:
+  - Source files: Phase 10 cross-attention conditioning and Phase 11A post-merge conditioning.
+  - Target files: minimal explicit injection-location switch and parity tests.
+  - Commands: same-feature/same-adapter fixed-batch forward and gradient probes.
+  - Tests: source, pooling, rank, initialization, optimizer membership, and parameter count are matched or the exact unavoidable difference is documented.
+  - Result: conditioning placement can be interpreted independently.
+  - Commit: pending.
+
+- [x] T1306 Prove parity, source freezing, optimizer membership, and capacity matching.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: checkpoint loaders, source-freezing helpers, and Phase 10/11 checksum tests.
+  - Target files: focused Phase 13 parity and membership tests.
+  - Commands: complete gate-zero parity, source checksum audit, and four-variant coverage/optimizer inventory.
+  - Tests: Phase 11 shared tests and fixed audit pass; PVB coverage is 195/195, trainable set is 17,185 across all four controls, and Anew variance is absent.
+  - Result: architecture, source-freezing, optimizer, and capacity gates pass before/alongside the locked training launch.
+  - Commit: working tree evidence; no commit requested.
+
+- [x] T1307 Run locked-checkpoint perturbation diagnostics and fixed-real-batch gates.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: locked Phase 11A checkpoint, existing exact-length views, `scripts/source_frozen_overfit.py`, and Phase 9/10/11 evaluation helpers.
+  - Target files: thin reusable Phase 13 driver and diagnostic JSON/Markdown artifacts.
+  - Commands: Stage-A valid-only locked-adapter diagnostic plus three fixed-real-batch runs for `shuffled`, `constant`, and `atom_no_pool`; all artifacts are under `phase13/diagnostics/`, `phase13/gates/`, and `phase13/logs/`.
+  - Tests: all four variants have finite one-step loss/gradients, nonzero gate/projector gradients, exact source preservation, 17,185 trainable parameters, and complete 8-item debug valid traversal; Stage A is valid-only and reports PVB-like identical KL.
+  - Result: fixed-batch gate passed for all four variants. With the locked real adapter, valid `rec_total` was real 0.218320, shuffled 0.221847, constant 0.236439, atom_no_pool 0.246207; this is dependency evidence only, not a retrained performance claim.
+  - Commit: working tree evidence; no commit requested.
+
+- [x] T1308 Train the matched ablation controls with valid-only selection.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: existing Phase 10/11A training protocol, exact protein-only Phase 9 views, and the Phase 13 variant registry.
+  - Target files: `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase13/training/`, `checkpoints/`, `logs/`, and `diagnostics/`.
+  - Commands: four identical seeded runs of `python -m scripts.phase11_shared_train_eval` with variant-specific `--shared-hblock-variant`, projector/gate LR `1e-3`, gradient clipping `1.0`, five-epoch cap, minimum three epochs, and valid `rec_total` selection; no test traversal.
+  - Tests: all four runs traversed 6,413 train and 367 valid records with 14,666,461 and 847,978 atoms respectively; finite gradients, exact source checksums, exact optimizer complement, and 17,185 trainable parameters passed.
+  - Result: `real` ran 5 epochs and selected epoch 4 at valid `rec_total=0.218319582`; `shuffled` stopped after 3 epochs at `0.218891819`; `constant` stopped after 3 epochs at `0.218855551`; `atom_no_pool` ran 5 epochs and selected epoch 4 at `0.216537594`. Checkpoint SHA256: real `4f584dc0f01b05e03c4a63eede213f9f608a5fdba0b3d19a73834982e1aa6d4b`, shuffled `cfd44903b7957410f93054e75fa5b83abd9bd08883bf7c37802088c3c4d4653a`, constant `d3b6098dcdae6cfdcc3535d8ca1faaf5dcea99fcd80e6c05338e576c29d7e980`, atom_no_pool `af695b1f1dbd1e8acee843f527105336f73f085f7ddaccbcfe7d94743a947df4`. Lock manifests were created with test unevaluated.
+  - Commit: working tree evidence; no commit requested.
+
+- [x] T1309 Lock checkpoints and run one-time paired valid/test evaluation.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: all four valid-selected Phase 13 checkpoints, lock manifests, `scripts/phase13_paired_eval.py`, and identical complete protein-only views.
+  - Target files: `reports/phase13/t1309_paired_eval.md` and `/output/pvb_cross_dataset_20260810/hblock_adapter_v1/phase13/evaluation/paired_valid_test.json`.
+  - Commands: one evaluator run with seeds `20260810`, `20260811`, and `20260812`, valid then test, using the frozen batch budget and PVB full checkpoint.
+  - Tests: identical valid counts `367/847,978 atoms/354 batches` and test counts `167/334,142 atoms/155 batches` for all five models; PVB-like KL; lock/checkpoint SHA256 and adapter coverage verified; test traversal completed once.
+  - Result: batch-mean `rec_total` was PVB off `0.268296111/0.249656701`, real `0.255006258/0.237041124`, shuffled `0.255652213/0.237688745`, constant `0.255703018/0.237712422`, and atom-no-pool `0.252977388/0.235095688` on valid/test. Real beats shuffled and constant by about `0.00065–0.00070`, while all adapter controls beat off; the report records that this supports a dominant capacity/injection effect plus a small record-specific signal. The evaluator stores aggregate batch/atom-weighted metrics, not per-record vectors; no second test traversal was performed for bootstrap.
+  - Commit: working tree evidence; no commit requested.
+
+- [x] T1310 Close the four-control Phase 13 tranche and record the next ablation phase.
+
+  Status: `DONE`
+
+  Evidence:
+  - Source files: all Phase 13 reports, locked checkpoints, paired evaluator, source revisions, and the Phase 12 live data audit.
+  - Target files: `reports/phase13/t1309_paired_eval.md`, `reports/phase13/t1310_conclusion.md`, and finalized `PLAN.md`, `TASKS.md`, `DECISIONS.md`, `HANDOFF.md`.
+  - Commands: `python -m unittest discover -s tests -v`; `python -m compileall -q .`; `python train.py --help`; `python infer_prot.py --help`; `git diff --check`; source worktree status; Phase 9/Phase 13 SHA256 audit.
+  - Tests: 59/59 target tests passed in 17.805 s; compile and both CLI help checks passed; `git diff --check` passed; `/workspace/PVB` and `/workspace/AnewOmni` remained clean; Phase 9 PVB checkpoint SHA remained `4f0ad88356c7159cd5d0b9641b6c1e5c5f97a87ed95e7748c8189e1a110d1a77`.
+  - Result: the four-control tranche is closed. Common adapter/injection capacity explains most of the gain, real H-block adds a small consistent record-specific signal, atom-no-pool is best, and all controls preserve PVB KL. No Gaussian H-block conclusion is supported. T1304/T1305 remain unrun and unclaimed; Phase 11B remains deferred because fragment coverage is unresolved. Phase 12 PDB acquisition is still partial at about 50,189 files/11G with 409G free. Report hashes: T1309 `56d313c2260628ed0a03b8f6742b15ab5b876bbd89eccf92f7bde123acc51597`, T1310 `9d9fc390ac9be0eca6b92ec57160ab2b67d42ced146951a8974a6d81f7abf098`.
+  - Commit: working tree evidence; no commit requested.
+
+Gate P13: do not train before parity, source-freezing, capacity matching, and
+fixed-real-batch gates pass. Select checkpoints by valid `rec_total` only and
+evaluate test once after locking. Do not add block KL or replace PVB posterior
+variance in this phase.
+support it.

@@ -230,7 +230,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cutoff-upper", type=float, default=10.0)
     parser.add_argument("--additional-noise-scale", type=float, default=0.2)
     parser.add_argument("--using-ode", action="store_true")
-    parser.add_argument("--fusion-mode", choices=("off", "anew_block"), default="off")
+    parser.add_argument("--fusion-mode", choices=("off", "anew_block", "anew_block_pvb_posterior", "pvb_shared_hblock"), default="off")
     parser.add_argument("--anew-hidden-dim", type=int, default=512)
     parser.add_argument("--anew-ffn-dim", type=int, default=512)
     parser.add_argument("--anew-edge-size", type=int, default=64)

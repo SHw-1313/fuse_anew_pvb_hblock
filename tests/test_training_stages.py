@@ -148,6 +148,30 @@ class TestTrainingStages(unittest.TestCase):
         self.assertIn("projector_gate", diagnostics)
         self.assertTrue(all(torch.isfinite(torch.tensor(value)) for value in diagnostics.values()))
 
+    def test_shared_source_frozen_has_exact_pvb_union_complement(self):
+        model = _model(fusion_mode="pvb_shared_hblock")
+        loaded = {
+            name for name, _ in model.named_parameters()
+            if name.startswith(("encoder.", "W_vec_mu.", "W_vec_log_var.",
+                                "decoder.", "vel_ffn.", "drf_ffn."))
+        }
+        configure_fusion_parameters(model, "source_frozen", source_keys=loaded)
+        trainable = {
+            name for name, parameter in model.named_parameters()
+            if parameter.requires_grad
+        }
+        expected = {
+            name for name, _ in model.named_parameters()
+            if name.startswith("shared_hblock_adapter.") or name == "shared_hblock_gate"
+        }
+        self.assertEqual(trainable, expected)
+        groups = fusion_parameter_groups(model, 1e-4, 1e-5, 1e-3)
+        self.assertEqual({group["name"] for group in groups}, {"projector_gate"})
+        self.assertEqual(
+            {id(parameter) for group in groups for parameter in group["params"]},
+            {id(parameter) for name, parameter in model.named_parameters() if name in expected},
+        )
+
     def test_dynamic_wrapper_accepts_attention_aware_budget(self):
         class Dataset:
             collate_fn = staticmethod(lambda batch: batch)

@@ -58,7 +58,9 @@ model:
   using_ode: false                      # whether to use ODE to model the bridge, default: false
   backbone: torchmdnet                  # backbone module type, default: torchmdnet, DO NOT CHANGE
   fusion:
-    mode: off                           # off, anew_block, or anew_block_pvb_posterior
+    mode: off                           # off, anew_block, anew_block_pvb_posterior, or pvb_shared_hblock
+    shared_hblock_variant: real           # real, shuffled, constant, or atom_no_pool
+    shared_hblock_seed: 20260810          # deterministic seed for Phase 13 controls
     stage: standard                     # standard, adapter, source_frozen, A, B, or C when fusion is enabled
     pvb_lr: 0.0001
     anew_lr: 0.00001

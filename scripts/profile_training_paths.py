@@ -31,6 +31,7 @@ from utils.fusion_training import (
     fusion_gradient_norms,
     fusion_parameter_groups,
 )
+from utils.phase13_ablation import phase13_adapter_variant_names
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,19 +41,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--record-index", type=int, default=0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--pvb-checkpoint", required=True)
-    parser.add_argument("--anew-checkpoint", required=True)
+    parser.add_argument("--anew-checkpoint", default=None)
     parser.add_argument("--pvb-role", choices=("pvb", "pvb_full"), default="pvb")
     parser.add_argument(
         "--fusion-mode",
-        choices=("anew_block", "anew_block_pvb_posterior"),
+        choices=("off", "anew_block", "anew_block_pvb_posterior", "pvb_shared_hblock"),
         default="anew_block",
     )
     parser.add_argument("--warmup-steps", type=int, default=1)
     parser.add_argument("--steps", type=int, default=1)
+    parser.add_argument("--shared-hblock-variant", choices=phase13_adapter_variant_names(), default="real")
     return parser
 
 
-def build_model(fusion_mode: str = "anew_block") -> dyVAE:
+def build_model(
+    fusion_mode: str = "anew_block",
+    *,
+    shared_hblock_variant: str = "real",
+    shared_hblock_seed: int = 20260810,
+) -> dyVAE:
     return dyVAE(
         256,
         512,
@@ -71,6 +78,8 @@ def build_model(fusion_mode: str = "anew_block") -> dyVAE:
         using_ode=False,
         backbone="torchmdnet",
         fusion_mode=fusion_mode,
+        shared_hblock_variant=shared_hblock_variant,
+        shared_hblock_seed=shared_hblock_seed,
         anew_encoder_config={
             "hidden_size": 128,
             "ffn_size": 128,
@@ -97,6 +106,14 @@ def _load_roles(
     # machine-readable JSON, so retain the reports while keeping stdout clean.
     with contextlib.redirect_stdout(io.StringIO()):
         pvb = load_role_checkpoint(model, pvb_checkpoint, pvb_role, min_coverage=1.0)
+        if model.fusion_mode == "off":
+            return {pvb_role: pvb}
+        if model.fusion_mode == "pvb_shared_hblock":
+            if pvb_role != "pvb_full":
+                raise ValueError("pvb_shared_hblock requires pvb_role='pvb_full'")
+            return {pvb_role: pvb}
+        if not anew_checkpoint:
+            raise ValueError(f"{model.fusion_mode} requires an Anew checkpoint")
         anew = load_role_checkpoint(model, anew_checkpoint, "anew", min_coverage=1.0)
     return {pvb_role: pvb, "anew": anew}
 
@@ -198,7 +215,10 @@ def run(args: argparse.Namespace) -> dict:
     batch = _move_batch(collate_fn([[item]]), device)
     reports = {}
     for role, report in _load_roles(
-        build_model(args.fusion_mode),
+        build_model(
+            args.fusion_mode,
+            shared_hblock_variant=args.shared_hblock_variant,
+        ),
         args.pvb_checkpoint,
         args.anew_checkpoint,
         args.pvb_role,
@@ -225,8 +245,13 @@ def run(args: argparse.Namespace) -> dict:
     }
     for mode in ("all_trainable", "adapter", "source_frozen", "forward_only"):
         torch.manual_seed(1000)
-        model = build_model(args.fusion_mode)
-        role_reports = _load_roles(model, args.pvb_checkpoint, args.anew_checkpoint, args.pvb_role)
+        model = build_model(
+            args.fusion_mode,
+            shared_hblock_variant=args.shared_hblock_variant,
+        )
+        role_reports = _load_roles(
+            model, args.pvb_checkpoint, args.anew_checkpoint, args.pvb_role
+        )
         source_keys = set().union(
             *(report.matched_keys for report in role_reports.values())
         )

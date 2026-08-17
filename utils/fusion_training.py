@@ -37,7 +37,7 @@ def configure_fusion_parameters(
     if stage not in {"STANDARD", "ADAPTER", "SOURCE_FROZEN", "A", "B", "C"}:
         raise ValueError("fusion training stage must be standard, adapter, source_frozen, A, B, or C")
 
-    if getattr(model, "fusion_mode", "off") not in {"anew_block", "anew_block_pvb_posterior"} or stage == "STANDARD":
+    if getattr(model, "fusion_mode", "off") not in {"anew_block", "anew_block_pvb_posterior", "pvb_shared_hblock"} or stage == "STANDARD":
         for parameter in model.parameters():
             parameter.requires_grad = True
         return {"trainable": sum(p.requires_grad for p in model.parameters()), "total": sum(1 for _ in model.parameters())}
@@ -46,6 +46,7 @@ def configure_fusion_parameters(
         parameter.requires_grad = False
 
     pvb_prefixes = ("decoder.", "vel_ffn.", "drf_ffn.", "block_projection.")
+    pvb_prefixes = pvb_prefixes + ("shared_hblock_adapter.",)
     if stage == "SOURCE_FROZEN":
         loaded_keys = set(source_keys if source_keys is not None else getattr(model, "_source_checkpoint_keys", ()))
         if not loaded_keys:
@@ -56,7 +57,11 @@ def configure_fusion_parameters(
         return {"trainable": sum(p.requires_grad for p in model.parameters()), "total": total}
     if stage == "ADAPTER":
         for name, parameter in model.named_parameters():
-            if name == "block_gate" or name.startswith("block_projection."):
+            if (
+                name in {"block_gate", "shared_hblock_gate"}
+                or name.startswith("block_projection.")
+                or name.startswith("shared_hblock_adapter.")
+            ):
                 parameter.requires_grad = True
         total = sum(1 for _ in model.parameters())
         return {"trainable": sum(p.requires_grad for p in model.parameters()), "total": total}
@@ -104,7 +109,11 @@ def fusion_parameter_groups(
     for name, parameter in model.named_parameters():
         if not parameter.requires_grad:
             continue
-        if name == "block_gate" or name.startswith("block_projection."):
+        if (
+            name in {"block_gate", "shared_hblock_gate"}
+            or name.startswith("block_projection.")
+            or name.startswith("shared_hblock_adapter.")
+        ):
             group_name = "projector_gate"
         elif name.startswith("anew_block_encoder."):
             group_name = "anew"
@@ -132,7 +141,11 @@ def fusion_gradient_norms(model: nn.Module) -> Dict[str, float]:
     for name, parameter in model.named_parameters():
         if parameter.grad is None:
             continue
-        if name == "block_gate" or name.startswith("block_projection."):
+        if (
+            name in {"block_gate", "shared_hblock_gate"}
+            or name.startswith("block_projection.")
+            or name.startswith("shared_hblock_adapter.")
+        ):
             group_name = "projector_gate"
         elif name.startswith("anew_block_encoder."):
             group_name = "anew"
@@ -142,4 +155,6 @@ def fusion_gradient_norms(model: nn.Module) -> Dict[str, float]:
     result = {name: math.sqrt(value) for name, value in squared.items()}
     if getattr(model, "block_gate", None) is not None:
         result["block_gate"] = float(model.block_gate.detach().cpu().item())
+    if getattr(model, "shared_hblock_gate", None) is not None:
+        result["shared_hblock_gate"] = float(model.shared_hblock_gate.detach().cpu().item())
     return result

@@ -1,0 +1,1 @@
+"""Vendored AnewOmni data helpers."""

@@ -85,6 +85,34 @@ class TestCheckpoints(unittest.TestCase):
             with self.assertRaises(CheckpointCoverageError):
                 load_role_checkpoint(target, path, "pvb_full")
 
+    def test_pvb_full_loads_shared_mode_and_leaves_only_new_adapter_keys(self):
+        source = _model("off", using_ode=False)
+        target = _model("pvb_shared_hblock", using_ode=False)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "pvb_full_shared.ckpt"
+            torch.save({"state_dict": source.state_dict()}, path)
+            report = load_role_checkpoint(target, path, "pvb_full")
+        self.assertEqual(report.coverage, 1.0)
+        self.assertFalse(report.missing_keys)
+        self.assertFalse(report.unexpected_keys)
+        self.assertFalse(report.shape_mismatches)
+        self.assertIsNone(target.anew_block_encoder)
+        loaded = set(report.matched_keys)
+        all_parameters = dict(target.named_parameters())
+        self.assertEqual(
+            set(all_parameters).difference(loaded),
+            {
+                "shared_hblock_gate",
+                "shared_hblock_adapter.projection.0.weight",
+                "shared_hblock_adapter.projection.0.bias",
+                "shared_hblock_adapter.projection.1.weight",
+                "shared_hblock_adapter.projection.1.bias",
+                "shared_hblock_adapter.projection.3.weight",
+                "shared_hblock_adapter.projection.3.bias",
+            },
+        )
+
+
     def test_anew_source_keys_are_translated(self):
         source = _model("anew_block")
         target = _model("anew_block")

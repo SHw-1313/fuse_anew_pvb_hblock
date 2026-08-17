@@ -66,6 +66,8 @@ def build_dyvae_from_config(args):
         backbone=args.model.backbone,
         fusion_mode=fusion_mode,
         anew_encoder_config=anew_encoder_config,
+        shared_hblock_variant=getattr(fusion, "shared_hblock_variant", "real"),
+        shared_hblock_seed=int(getattr(fusion, "shared_hblock_seed", 20260810)),
     )
 
     pvb_checkpoint = getattr(args.model, "pvb_checkpoint", None)

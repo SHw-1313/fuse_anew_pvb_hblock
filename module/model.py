@@ -44,7 +44,9 @@ class dyVAE(nn.Module):
                  using_ode=True,
                  backbone="torchmdnet",
                  fusion_mode="off",
-                 anew_encoder_config=None
+                 anew_encoder_config=None,
+                 shared_hblock_variant="real",
+                 shared_hblock_seed=20260810
                 ):
         super(dyVAE, self).__init__()
 
@@ -64,16 +66,20 @@ class dyVAE(nn.Module):
         self.re_weight = re_weight
         self.using_ode = using_ode
         self.backbone = backbone
-        if fusion_mode not in {"off", "anew_block", "anew_block_pvb_posterior"}:
+        if fusion_mode not in {"off", "anew_block", "anew_block_pvb_posterior", "pvb_shared_hblock"}:
             raise ValueError(
                 f"Unsupported fusion_mode={fusion_mode!r}; expected 'off', "
-                "'anew_block', or 'anew_block_pvb_posterior'"
+                "'anew_block', 'anew_block_pvb_posterior', or 'pvb_shared_hblock'"
             )
         self.fusion_mode = fusion_mode
 
         self.anew_block_encoder = None
+        self.shared_hblock_variant = str(shared_hblock_variant)
+        self.shared_hblock_seed = int(shared_hblock_seed)
         self.block_projection = None
         self.block_gate = None
+        self.shared_hblock_adapter = None
+        self.shared_hblock_gate = None
         self.anew_hidden_dim = None
         if self.fusion_mode in {"anew_block", "anew_block_pvb_posterior"}:
             from .anew_block_encoder import AnewBlockEncoder
@@ -87,6 +93,16 @@ class dyVAE(nn.Module):
                 nn.Linear(self.anew_hidden_dim, hidden_dim),
             )
             self.block_gate = nn.Parameter(torch.zeros(1))
+        elif self.fusion_mode == "pvb_shared_hblock":
+            from .shared_hblock import SharedHBlockAdapter
+
+            self.shared_hblock_adapter = SharedHBlockAdapter(
+                hidden_dim,
+                rank=32,
+                variant=self.shared_hblock_variant,
+                shuffle_seed=self.shared_hblock_seed,
+            )
+            self.shared_hblock_gate = nn.Parameter(torch.zeros(1))
 
         # encoder
         self.encoder = TorchMD_VQ_ET(
@@ -127,7 +143,13 @@ class dyVAE(nn.Module):
         _init_linear_(self.W_vec_mu)
         _init_linear_(self.W_vec_log_var)
     
-    def encode(self, z, b, x, x_mu_ref, batch, edge_index, edge_weight, edge_vec, bond_type, mask):
+    def encode(self, z, b, x, x_mu_ref, batch, edge_index, edge_weight, edge_vec, bond_type, mask, return_state=False):
+        """Encode PVB coordinates and optionally expose scalar atom state.
+
+        The default two-value return is kept for all historical callers.  The
+        optional state is used by the Phase 11 shared-H-block path and does not
+        change the posterior calculation.
+        """
         h, vec, _, _, _ = self.encoder(z=z, b=b, pos=x, batch=batch, edge_index=edge_index,
                                        edge_weight_t=edge_weight, edge_vec_t=edge_vec,
                                        bond_type=bond_type)
@@ -141,9 +163,15 @@ class dyVAE(nn.Module):
         kl_loss = -0.5 * torch.sum(1.0 + x_log_var[mask] - math.log(self.coord_prior_var) - torch.exp(x_log_var[mask]) / self.coord_prior_var) / mask.sum()
         # reparametrization
         x_rep = x_mu + torch.exp(x_log_var / 2) * torch.randn_like(x)
+        if return_state:
+            return x_rep, kl_loss, {
+                "h_atom": h,
+                "vec_atom": vec,
+                "log_var_pvb": x_log_var,
+            }
         return x_rep, kl_loss
 
-    def _encode_pvb_path(self, z, b, x, x_mu_ref, abid, mask, edge_mask, bond_index):
+    def _encode_pvb_path(self, z, b, x, x_mu_ref, abid, mask, edge_mask, bond_index, return_state=False):
         """Run the original PVB encoder/graph path used by ``off``."""
 
         e_edge_index, e_edge_weight, e_edge_vec, e_bond_type = construct_edges(
@@ -168,6 +196,7 @@ class dyVAE(nn.Module):
             e_edge_vec,
             e_bond_type,
             mask,
+            return_state=return_state,
         )
 
     def _pvb_encoder_diagnostics(self, z, b, x, abid, mask, edge_mask, bond_index):
@@ -264,14 +293,32 @@ class dyVAE(nn.Module):
         # Keep the gate scalar explicit and shared by both decoder branches.
         return torch.tanh(self.block_gate) * condition
 
-    def decode(self, z, b, x, t, batch, edge_index, edge_weight_0, edge_vec_0, edge_weight_t, edge_vec_t, bond_type, block_condition=None):
+    def _project_shared_hblock_condition(self, h_atom, batch):
+        """Pool detached PVB features and return the gated atom condition."""
+
+        if self.fusion_mode != "pvb_shared_hblock" or self.shared_hblock_adapter is None:
+            raise RuntimeError(
+                "_project_shared_hblock_condition requires fusion_mode='pvb_shared_hblock'"
+            )
+        output = self.shared_hblock_adapter(
+            h_atom=h_atom,
+            atom_block_id=batch["atom_block_id"],
+            block_lengths=batch["block_lengths"],
+            block_batch=batch.get("block_batch"),
+            variant=self.shared_hblock_variant,
+        )
+        condition_atom = torch.tanh(self.shared_hblock_gate) * output["condition_atom"]
+        return condition_atom, output
+
+    def decode(self, z, b, x, t, batch, edge_index, edge_weight_0, edge_vec_0, edge_weight_t, edge_vec_t, bond_type, block_condition=None, post_cross_condition=None):
         if self.backbone == "torchmdnet":
             h, vec, _, _, _ = self.decoder(z=z, b=b, pos=x, batch=batch, t=t,edge_index=edge_index,
                                            edge_weight_0=edge_weight_0, edge_vec_0=edge_vec_0,
                                            edge_weight_t=edge_weight_t, edge_vec_t=edge_vec_t,
-                                           bond_type=bond_type, block_condition=block_condition)
+                                           bond_type=bond_type, block_condition=block_condition,
+                                           post_cross_condition=post_cross_condition)
         elif self.backbone == "equiformer-v2":
-            if block_condition is not None:
+            if block_condition is not None or post_cross_condition is not None:
                 raise NotImplementedError(
                     "Anew block conditioning is only implemented for torchmdnet"
                 )
@@ -302,21 +349,33 @@ class dyVAE(nn.Module):
         
         target = x1 if mode == "md" else clean_x0
 
+        post_cross_condition = None
+        pvb_state = None
         N = x0.shape[0]
         # encode
         block_condition = None
-        if self.fusion_mode in {"off", "anew_block_pvb_posterior"}:
-            # Preserve the original PVB encoder path for both the baseline and
-            # the corrected posterior-preserving mode.
-            x_rep, kl_loss = self._encode_pvb_path(
-                atype, btype, x0, b0, abid, mask, edge_mask, bond_index
-            )
+        if self.fusion_mode in {"off", "anew_block_pvb_posterior", "pvb_shared_hblock"}:
+            # Preserve the original PVB encoder path for the baseline,
+            # corrected posterior-preserving mode, and shared-PVB Phase 11 mode.
+            if self.fusion_mode == "pvb_shared_hblock":
+                x_rep, kl_loss, pvb_state = self._encode_pvb_path(
+                    atype, btype, x0, b0, abid, mask, edge_mask, bond_index,
+                    return_state=True,
+                )
+            else:
+                x_rep, kl_loss = self._encode_pvb_path(
+                    atype, btype, x0, b0, abid, mask, edge_mask, bond_index
+                )
             if self.fusion_mode == "anew_block_pvb_posterior":
                 # Anew consumes the clean input and supplies decoder-only block
                 # conditioning; its posterior/coordinate outputs are ignored
                 # by the bridge objective.
                 block_output = self._encode_anew_conditioning(clean_x0, batch)
                 block_condition = self._project_block_condition(block_output)
+            elif self.fusion_mode == "pvb_shared_hblock":
+                post_cross_condition, _ = self._project_shared_hblock_condition(
+                    pvb_state["h_atom"], batch
+                )
         else:
             # Legacy Phase 9 semantics: Anew supplies both the posterior and
             # block conditioning. Keep this branch unchanged in meaning.
@@ -362,7 +421,8 @@ class dyVAE(nn.Module):
             vel_pred = self.decode(atype, btype, xt, t_diff, abid, d_edge_index,
                                    d_edge_weight_0, d_edge_vec_0,
                                    d_edge_weight_t, d_edge_vec_t,
-                                   d_bond_type, block_condition=block_condition)
+                                   d_bond_type, block_condition=block_condition,
+                                   post_cross_condition=post_cross_condition)
             rec_vel_loss = F.mse_loss(vel_pred[mask], velocity_gt[mask], reduction='mean')
             rec_drf_loss = 0.
             if torch.any(lig_mask):
@@ -371,7 +431,8 @@ class dyVAE(nn.Module):
             vel_pred, drf_pred = self.decode(atype, btype, xt, t_diff, abid, d_edge_index,
                                              d_edge_weight_0, d_edge_vec_0,
                                              d_edge_weight_t, d_edge_vec_t,
-                                             d_bond_type, block_condition=block_condition)
+                                             d_bond_type, block_condition=block_condition,
+                                             post_cross_condition=post_cross_condition)
             rec_vel_loss = F.mse_loss(vel_pred[mask], velocity_gt[mask], reduction='mean')
             rec_drf_loss = F.mse_loss(drf_pred[mask], drf_gt[mask], reduction='mean')
             if torch.any(lig_mask):
@@ -384,26 +445,32 @@ class dyVAE(nn.Module):
     
     def inference(self, batch, sde_step=50):
         z, b, x, abid, edge_mask, bond_index = batch["atype"], batch["btype"], batch["x0"], batch["abid"], batch["edge_mask"], batch["bond_index"]
+        post_cross_condition = None
+        pvb_state = None
         N = x.shape[0]
 
         # encode
         block_condition = None
-        if self.fusion_mode in {"off", "anew_block_pvb_posterior"}:
+        if self.fusion_mode in {"off", "anew_block_pvb_posterior", "pvb_shared_hblock"}:
             # Preserve the original PVB posterior sampling path for both the
             # baseline and corrected mode.
-            x_rep, _ = self._encode_pvb_path(
-                z,
-                b,
-                x,
-                x,
-                abid,
-                torch.ones_like(z).bool(),
-                edge_mask,
-                bond_index,
-            )
+            if self.fusion_mode == "pvb_shared_hblock":
+                x_rep, _, pvb_state = self._encode_pvb_path(
+                    z, b, x, x, abid, torch.ones_like(z).bool(), edge_mask,
+                    bond_index, return_state=True,
+                )
+            else:
+                x_rep, _ = self._encode_pvb_path(
+                    z, b, x, x, abid, torch.ones_like(z).bool(), edge_mask,
+                    bond_index,
+                )
             if self.fusion_mode == "anew_block_pvb_posterior":
                 block_output = self._encode_anew_conditioning(x, batch)
                 block_condition = self._project_block_condition(block_output)
+            elif self.fusion_mode == "pvb_shared_hblock":
+                post_cross_condition, _ = self._project_shared_hblock_condition(
+                    pvb_state["h_atom"], batch
+                )
         else:
             # Legacy Phase 9 semantics use Anew's posterior here.
             x_rep, _, block_output = self._encode_anew_block(
@@ -434,13 +501,15 @@ class dyVAE(nn.Module):
                 vel_pred = self.decode(z, b, xt, t_diff, abid, d_edge_index,
                                        d_edge_weight_0, d_edge_vec_0,
                                        d_edge_weight_t, d_edge_vec_t,
-                                       bond_type, block_condition=block_condition)
+                                       bond_type, block_condition=block_condition,
+                                       post_cross_condition=post_cross_condition)
                 xt = xt + vel_pred * dt
             else:
                 vel_pred, drf_pred = self.decode(z, b, xt, t_diff, abid, d_edge_index,
                                                  d_edge_weight_0, d_edge_vec_0,
                                                  d_edge_weight_t, d_edge_vec_t,
-                                                 bond_type, block_condition=block_condition)
+                                                 bond_type, block_condition=block_condition,
+                                                 post_cross_condition=post_cross_condition)
                 # drift = INTERP_MATCHER.drift(vel_pred, den_pred, t, self.sigma)
                 drift = drf_pred
                 diffusion = INTERP_MATCHER.diffusion(self.sigma)
@@ -455,7 +524,23 @@ class dyVAE(nn.Module):
         # given x0
         xt = x0.clone()
         block_condition = None
-        if self.fusion_mode in {"anew_block", "anew_block_pvb_posterior"}:
+        post_cross_condition = None
+        if self.fusion_mode == "pvb_shared_hblock":
+            # The shared Phase 11 path reuses PVB's scalar encoder state for
+            # decoder-only conditioning; no Anew encoder or posterior is run.
+            pvb_diagnostics = self._pvb_encoder_diagnostics(
+                z,
+                b,
+                x0,
+                abid,
+                torch.ones_like(z).bool(),
+                edge_mask,
+                bond_index,
+            )
+            post_cross_condition, _ = self._project_shared_hblock_condition(
+                pvb_diagnostics["H_pvb"], batch
+            )
+        elif self.fusion_mode in {"anew_block", "anew_block_pvb_posterior"}:
             block_output = self.anew_block_encoder(
                 x_atom=x0,
                 atom_type=batch["atype"],
@@ -490,13 +575,15 @@ class dyVAE(nn.Module):
                 vel_pred = self.decode(z, b, xt, t_diff, abid, d_edge_index,
                                        d_edge_weight_0, d_edge_vec_0,
                                        d_edge_weight_t, d_edge_vec_t,
-                                       bond_type, block_condition=block_condition)
+                                       bond_type, block_condition=block_condition,
+                                       post_cross_condition=post_cross_condition)
                 xt = xt + vel_pred * dt
             else:
                 vel_pred, drf_pred = self.decode(z, b, xt, t_diff, abid, d_edge_index,
                                                  d_edge_weight_0, d_edge_vec_0,
                                                  d_edge_weight_t, d_edge_vec_t,
-                                                 bond_type, block_condition=block_condition)
+                                                 bond_type, block_condition=block_condition,
+                                                 post_cross_condition=post_cross_condition)
                 # drift = INTERP_MATCHER.drift(vel_pred, den_pred, t, self.sigma)
                 drift = drf_pred
                 diffusion = INTERP_MATCHER.diffusion(self.sigma)

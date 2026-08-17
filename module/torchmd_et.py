@@ -323,6 +323,7 @@ class TorchMD_VQ_ET(nn.Module):
         edge_vec_t: Optional[Tensor] = None,
         bond_type: Optional[Tensor] = None,
         block_condition: Optional[Tensor] = None,
+        post_cross_condition: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         assert (
             t is None or t.shape[1] == self.extra_channels
@@ -384,6 +385,15 @@ class TorchMD_VQ_ET(nn.Module):
         if self.cross_attn:
             xt = torch.cat([x0, xt], dim=-1)    # (n, 2d)
             xt = self.crs_ffn(xt)               # (n, d)
+        if post_cross_condition is not None:
+            if post_cross_condition.shape != xt.shape:
+                raise ValueError(
+                    "post_cross_condition must have shape "
+                    f"{tuple(xt.shape)}, got {tuple(post_cross_condition.shape)}"
+                )
+            # Phase 11A adds the shared H-block exactly once after the x0/xt
+            # cross-branch merge and before the equivariant stack.
+            xt = xt + post_cross_condition
 
         vec = torch.zeros(xt.size(0), 3, xt.size(1), device=xt.device, dtype=xt.dtype)
 

@@ -30,6 +30,16 @@ _EXPECTED_CORRECTED_TRAINABLE = {
     "block_projection.1.weight",
 }
 
+_EXPECTED_SHARED_TRAINABLE = {
+    "shared_hblock_gate",
+    "shared_hblock_adapter.projection.0.bias",
+    "shared_hblock_adapter.projection.0.weight",
+    "shared_hblock_adapter.projection.1.bias",
+    "shared_hblock_adapter.projection.1.weight",
+    "shared_hblock_adapter.projection.3.bias",
+    "shared_hblock_adapter.projection.3.weight",
+
+}
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -38,11 +48,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--record-index", type=int, default=0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--pvb-checkpoint", required=True)
-    parser.add_argument("--anew-checkpoint", required=True)
+    parser.add_argument("--anew-checkpoint", default=None)
     parser.add_argument("--pvb-role", choices=("pvb", "pvb_full"), default="pvb")
     parser.add_argument(
         "--fusion-mode",
-        choices=("anew_block", "anew_block_pvb_posterior"),
+        choices=("anew_block", "anew_block_pvb_posterior", "pvb_shared_hblock"),
         default="anew_block",
     )
     parser.add_argument("--steps", type=int, default=20)
@@ -146,9 +156,17 @@ def run(args: argparse.Namespace) -> dict:
         if parameter.requires_grad
     }
     optimizer_is_exact = optimizer_ids == trainable_ids
+    if args.fusion_mode == "pvb_shared_hblock":
+        expected_trainable = _EXPECTED_SHARED_TRAINABLE
+        gate_name = "shared_hblock_gate"
+        projector_prefix = "shared_hblock_adapter.projection."
+    else:
+        expected_trainable = _EXPECTED_CORRECTED_TRAINABLE
+        gate_name = "block_gate"
+        projector_prefix = "block_projection."
     exact_corrected_trainable = (
-        args.fusion_mode != "anew_block_pvb_posterior"
-        or set(trainable_names) == _EXPECTED_CORRECTED_TRAINABLE
+        args.fusion_mode not in {"anew_block_pvb_posterior", "pvb_shared_hblock"}
+        or set(trainable_names) == expected_trainable
     )
 
     losses: list[float] = []
@@ -197,7 +215,7 @@ def run(args: argparse.Namespace) -> dict:
                 "parameter_norms": parameter_gradients,
             }
         )
-        gate_values_after_step.append(float(model.block_gate.detach().cpu().item()))
+        gate_values_after_step.append(float(getattr(model, gate_name).detach().cpu().item()))
 
     source_checksums_after = _checksums(model, source_keys)
     source_unchanged = source_checksums_before == source_checksums_after
@@ -209,13 +227,13 @@ def run(args: argparse.Namespace) -> dict:
     gate_gradient_steps = [
         entry["step"]
         for entry in gradient_history
-        if (entry["parameter_norms"].get("block_gate") or 0.0) > 1.0e-12
+        if (entry["parameter_norms"].get(gate_name) or 0.0) > 1.0e-12
     ]
     projector_gradient_steps = [
         entry["step"]
         for entry in gradient_history
         if any(
-            name.startswith("block_projection.")
+            name.startswith(projector_prefix)
             and (value or 0.0) > 1.0e-12
             for name, value in entry["parameter_norms"].items()
         )
@@ -242,13 +260,14 @@ def run(args: argparse.Namespace) -> dict:
         for role, report in reports.items()
     }
     corrected_kl_is_pvb_like = (
-        args.fusion_mode != "anew_block_pvb_posterior"
+        args.fusion_mode not in {"anew_block_pvb_posterior", "pvb_shared_hblock"}
         or (bool(kl_losses) and max(kl_losses) < 0.1)
     )
     result = {
         "device": str(device),
         "split": args.split,
         "record_index": args.record_index,
+        "anew_encoder_constructed": model.anew_block_encoder is not None,
         "fusion_mode": args.fusion_mode,
         "pvb_role": args.pvb_role,
         "atoms": int(batch["x0"].shape[0]),
